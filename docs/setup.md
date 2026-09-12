@@ -2,6 +2,18 @@
 
 This guide is written for both people and chatbots. A chatbot must interview the owner before recommending commands. A terminal-enabled agent may run read-only checks, but it must show the final plan and receive approval before changing the server.
 
+## Two-stage conversation
+
+A new owner cannot begin inside their Aidee controller's Telegram chat because the controller and bot do not exist yet.
+
+1. The owner gives the README prompt to an existing independent chatbot.
+2. That chatbot interviews the owner and guides host and controller installation.
+3. After the controller bot is connected, the chatbot prepares a non-secret setup summary.
+4. The owner sends that summary to the controller in Telegram.
+5. The controller confirms the summary, writes structured configuration, and curates durable memory.
+
+Chat history is useful evidence, but it is not the configuration source of truth. Do not copy secrets or the raw transcript into memory.
+
 ## Safety rules
 
 1. Never request or receive passwords, API keys, bot tokens, SSH private keys, recovery codes, or access tokens in chat.
@@ -34,10 +46,11 @@ The first pilot supports a dedicated x86-64 VPS running Ubuntu 24.04 or 26.04. U
 
 - Does the owner have a domain?
 - Do they want dashboards available remotely?
-- If there is no domain, can they use an SSH tunnel?
+- Can they install Tailscale on their phone?
+- If they do not want Tailscale, can they use an SSH tunnel?
 - Does the provider firewall currently expose SSH to the whole internet?
 
-A domain is optional. The safe default is a dashboard bound to server loopback and reached through an SSH tunnel. Cloudflare Tunnel and Access may be added later.
+A domain is optional. Keep the dashboard bound to server loopback. Use Tailscale for routine private phone access or an SSH tunnel for temporary desktop access. Cloudflare Tunnel and Access may be added later.
 
 ### 4. Fleet
 
@@ -90,19 +103,26 @@ Ask the owner to approve this plan.
 After approval:
 
 1. Connect over SSH instead of a provider's browser console.
-2. Clone the Aidee repository and check out the selected release.
-3. Run `./platform/scripts/preflight-host.sh`.
-4. Review `platform/scripts/bootstrap-host.sh`.
-5. Run `sudo ./platform/scripts/bootstrap-host.sh`.
-6. Run `./platform/scripts/verify-host.sh`.
-7. Initialize private fleet state with `platform/scripts/init-fleet.sh`.
-8. Install the unprivileged controller.
-9. Reach its protected dashboard through an SSH tunnel.
-10. Enter model and messaging credentials outside chat.
-11. Provision and validate one assistant.
-12. Provision remaining assistants one at a time.
-13. Configure optional private Git and encrypted backups.
-14. Run the recovery test in [recovery.md](recovery.md).
+2. Install Git if the clean host does not provide it.
+3. Clone the Aidee repository and check out the selected release.
+4. Run `./platform/scripts/preflight-host.sh`.
+5. Review `platform/scripts/bootstrap-host.sh`.
+6. Run `sudo ./platform/scripts/bootstrap-host.sh`.
+7. Reboot and reconnect through the protected SSH path.
+8. Install the selected Aidee revision under `/opt/aidee/source`.
+9. Run `platform/scripts/verify-host.sh`.
+10. Initialize private fleet state with `platform/scripts/init-fleet.sh`.
+11. Install the pinned unprivileged controller runtime with `platform/scripts/install-controller.sh`.
+12. Install its loopback-bound dashboard service.
+13. Install and authenticate Tailscale when the owner selected phone access.
+14. Publish the dashboard privately with Tailscale Serve.
+15. Enter model and messaging credentials outside chat.
+16. Start and validate the controller gateway.
+17. Transfer the approved non-secret setup summary to the controller.
+18. Provision and validate one assistant.
+19. Provision remaining assistants one at a time.
+20. Configure optional private Git and encrypted backups.
+21. Run the recovery test in [recovery.md](recovery.md).
 
 The project status identifies which steps are implemented. Do not invent commands for unfinished steps.
 

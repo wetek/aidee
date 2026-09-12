@@ -18,18 +18,36 @@ The controller does not receive sudo access or Docker group membership. A later 
 Do not pipe a remote script into a shell.
 
 ~~~bash
+sudo apt-get update
+sudo apt-get install -y git
 git clone https://github.com/wetek/aidee.git
 cd aidee
 git checkout PINNED_VERSION_OR_COMMIT
 ./platform/scripts/preflight-host.sh
 sudo ./platform/scripts/bootstrap-host.sh
-./platform/scripts/verify-host.sh
-sudo -u aidee-controller ./platform/scripts/init-fleet.sh \
+sudo systemctl reboot
+~~~
+
+Reconnect through the protected SSH path after the host restarts. Install the selected Aidee revision into the root-owned code directory:
+
+~~~bash
+sudo git clone https://github.com/wetek/aidee.git /opt/aidee/source
+sudo git -C /opt/aidee/source checkout PINNED_VERSION_OR_COMMIT
+/opt/aidee/source/platform/scripts/verify-host.sh
+sudo -u aidee-controller /opt/aidee/source/platform/scripts/init-fleet.sh \
   --owner-name "OWNER_NAME" \
   --repository-url "https://github.com/wetek/aidee.git"
+sudo /opt/aidee/source/platform/scripts/install-controller.sh
+sudo /opt/aidee/source/platform/scripts/install-controller-service.sh
 ~~~
 
 Replace `OWNER_NAME` and `PINNED_VERSION_OR_COMMIT` with the values selected in the approved setup plan.
+
+For private phone access, continue with [the Tailscale guide](tailscale.md). After model and messaging credentials are configured through the protected dashboard, run:
+
+~~~bash
+sudo /opt/aidee/source/platform/scripts/install-controller-gateway.sh
+~~~
 
 ## Provider-specific security
 

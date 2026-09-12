@@ -46,6 +46,7 @@ apt-get install -y \
   jq \
   openssl \
   python3 \
+  ripgrep \
   rsync \
   sudo \
   unattended-upgrades \

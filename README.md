@@ -18,6 +18,8 @@ Read the Aidee setup guide at https://github.com/wetek/aidee/blob/main/docs/setu
 Interview me using that guide, account for my technical experience, and show me a complete plan before making changes.
 
 Never ask me to paste passwords, API keys, SSH private keys, or access tokens into this chat. Use masked terminal input or an Aidee dashboard reached through an SSH tunnel for secrets.
+
+Keep a structured record of my non-secret answers. Once my Aidee controller is available in Telegram, help me transfer the approved setup summary so it can write the durable configuration and curated memory.
 ~~~
 
 A terminal-enabled coding agent can inspect the cloned repository and read [docs/setup.md](docs/setup.md) directly.
@@ -31,7 +33,7 @@ The first pilot targets one owner using a dedicated Ubuntu VPS. It will prove:
 - Telegram, MCP configuration, private Git state backup, and one coding-agent adapter.
 - Recovery on a clean VPS.
 
-Cloudflare and Langfuse are optional integrations. Other agent runtimes and multi-user teams are outside the first release.
+Tailscale is the recommended first option for private phone access. Cloudflare and Langfuse are optional integrations. Other agent runtimes and multi-user teams are outside the first release.
 
 ## Repository layout
 

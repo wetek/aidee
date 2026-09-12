@@ -11,13 +11,16 @@ Prove that an owner can use the Aidee setup guide to install a private fleet of 
 
 - Public product boundary and fleet templates.
 - Configuration schemas and state-tracking policy.
-- Ubuntu host preflight, bootstrap, and verification scripts.
+- Tested Ubuntu host preflight, bootstrap, and verification scripts.
+- Pinned unprivileged Hermes controller installation.
+- Loopback-bound controller dashboard service.
+- Hardened persistent controller gateway service.
+- Optional Tailscale installation and phone-access guide.
 - Provider-neutral recovery and migration contracts.
 - Chatbot-guided setup interview.
 
 ## Not implemented
 
-- Unprivileged Hermes controller installation.
 - Root-owned narrow administration helper.
 - Hermes image pinning and assistant container lifecycle.
 - Assistant provisioning commands.

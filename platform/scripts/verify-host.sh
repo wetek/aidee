@@ -55,7 +55,7 @@ for directory in "${AIDEE_CODE_DIR}" "${AIDEE_CONFIG_DIR}" "${AIDEE_STATE_DIR}";
   fi
 done
 
-if [[ "$(stat -c '%U:%G:%a' "${AIDEE_STATE_DIR}/secrets" 2>/dev/null || true)" == "${AIDEE_CONTROLLER_USER}:${AIDEE_CONTROLLER_USER}:700" ]]; then
+if [[ "$(sudo stat -c '%U:%G:%a' "${AIDEE_STATE_DIR}/secrets" 2>/dev/null || true)" == "${AIDEE_CONTROLLER_USER}:${AIDEE_CONTROLLER_USER}:700" ]]; then
   pass "Secret directory owner and mode are correct."
 else
   fail "Secret directory must be owned by ${AIDEE_CONTROLLER_USER} with mode 700."
