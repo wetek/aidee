@@ -2,6 +2,8 @@
 
 Reusable Hermes skills that every assistant may receive.
 
+`unslop/SKILL.md` applies to the public setup interview and generated assistant responses. Ordinary chatbots can read it as instructions even when they do not support installable skills.
+
 Initial skill targets:
 
 - Investigate an incident before proposing implementation.

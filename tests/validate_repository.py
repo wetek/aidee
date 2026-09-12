@@ -108,9 +108,47 @@ def validate_fleet_initialization():
             raise AssertionError("Generated fleet contains unresolved placeholders")
 
 
+def validate_setup_guidance():
+    skill_path = (
+        ROOT / "platform" / "shared-skills" / "unslop" / "SKILL.md"
+    )
+    skill_text = skill_path.read_text()
+    if len(skill_text.splitlines()) >= 500:
+        raise AssertionError("Unslop SKILL.md must stay under 500 lines")
+
+    parts = skill_text.split("---", 2)
+    if len(parts) != 3:
+        raise AssertionError("Unslop SKILL.md is missing YAML frontmatter")
+    metadata = yaml.safe_load(parts[1])
+    if metadata.get("name") != "unslop" or not metadata.get("description"):
+        raise AssertionError("Unslop SKILL.md metadata is invalid")
+
+    readme = (ROOT / "README.md").read_text()
+    required_prompt_paths = [
+        "docs/setup.md",
+        "docs/wizard-style.md",
+        "platform/shared-skills/unslop/SKILL.md",
+    ]
+    for path in required_prompt_paths:
+        if path not in readme:
+            raise AssertionError(f"README setup prompt does not reference {path}")
+
+    wizard_style = (ROOT / "docs" / "wizard-style.md").read_text()
+    for required_text in [
+        "Ask one question per message.",
+        "Aidee setup [2/6]",
+        "Reply `approve` to begin",
+    ]:
+        if required_text not in wizard_style:
+            raise AssertionError(
+                f"Wizard response format is missing: {required_text}"
+            )
+
+
 if __name__ == "__main__":
     validate_schemas()
     validate_yaml()
     validate_scripts()
     validate_fleet_initialization()
+    validate_setup_guidance()
     print("Repository validation passed.")

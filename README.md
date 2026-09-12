@@ -14,8 +14,15 @@ Copy this prompt into a chatbot that can read public web pages:
 ~~~text
 Help me install and configure Aidee on my own server.
 
-Read the Aidee setup guide at https://github.com/wetek/aidee/blob/main/docs/setup.md before giving me commands.
-Interview me using that guide, account for my technical experience, and show me a complete plan before making changes.
+Before replying, read and follow all three files:
+
+1. https://raw.githubusercontent.com/wetek/aidee/main/docs/setup.md
+2. https://raw.githubusercontent.com/wetek/aidee/main/docs/wizard-style.md
+3. https://raw.githubusercontent.com/wetek/aidee/main/platform/shared-skills/unslop/SKILL.md
+
+Apply the unslop instructions to every response. Use the wizard response format for the interview, installation, errors, and completion report. Do not assume that slash commands or agent skills are available.
+
+Start with `Aidee setup [1/6]` and ask only the first interview question. Account for my technical experience. Show me a complete plan before making changes.
 
 Never ask me to paste passwords, API keys, SSH private keys, or access tokens into this chat. Use masked terminal input or an Aidee dashboard reached through an SSH tunnel for secrets.
 
@@ -52,4 +59,3 @@ Read [the setup guide](docs/setup.md) and [the current project status](docs/proj
 ## License
 
 Aidee is licensed under the Apache License 2.0. Hermes Agent is a separate project with its own license and maintainers. Aidee is not affiliated with or endorsed by Nous Research.
-

@@ -2,6 +2,13 @@
 
 This guide is written for both people and chatbots. A chatbot must interview the owner before recommending commands. A terminal-enabled agent may run read-only checks, but it must show the final plan and receive approval before changing the server.
 
+Before the first response:
+
+1. Read [the wizard response format](wizard-style.md).
+2. Read [the unslop skill](../platform/shared-skills/unslop/SKILL.md).
+3. Apply both files to every interview question, instruction, status update, error, and completion report.
+4. Start with `Aidee setup [1/6]` and ask only the first question.
+
 ## Two-stage conversation
 
 A new owner cannot begin inside their Aidee controller's Telegram chat because the controller and bot do not exist yet.
@@ -25,7 +32,7 @@ Chat history is useful evidence, but it is not the configuration source of truth
 
 ## Interview
 
-Ask one section at a time. Explain unfamiliar terms in plain language.
+Ask one question at a time. Follow `wizard-style.md`. Explain unfamiliar terms in plain language.
 
 ### 1. Owner and experience
 
