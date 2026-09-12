@@ -1,0 +1,60 @@
+schema_version: 1
+
+# Paths are relative to assistants/<assistant-id>/ in private Aidee fleet state.
+tracked:
+  files:
+    - SOUL.md
+    - config.yaml
+    - projects.yaml
+    - project.yaml
+  directories:
+    - memories
+    - skills
+    - cron
+    - knowledge
+    - preferences
+
+excluded:
+  names:
+    - .env
+    - auth.json
+    - state.db
+    - todo.json
+    - desktop.json
+  directories:
+    - mcp-tokens
+    - sessions
+    - logs
+    - cache
+    - caches
+    - packages
+    - node_modules
+    - repositories
+    - worktrees
+    - tmp
+    - hook_outputs
+  patterns:
+    - "*.sqlite"
+    - "*.sqlite3"
+    - "*.db"
+    - "*.log"
+    - "*.pid"
+    - "*.key"
+    - "*.pem"
+
+commit_triggers:
+  - provisioning_change
+  - configuration_change
+  - successful_memory_write
+  - session_end
+  - before_upgrade
+  - after_upgrade
+  - manual_request
+  - scheduled_reconciliation
+
+commit:
+  writer: aidee_controller
+  scan_for_secrets: true
+  push_after_commit: true
+  coalesce_seconds: 5
+

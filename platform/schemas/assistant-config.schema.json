@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aidee:schema:assistant-config:1",
+  "title": "Aidee Assistant Configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "assistant", "projects", "approvals"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "assistant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "kind", "purpose"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+        "name": {"type": "string", "minLength": 1},
+        "kind": {"enum": ["personal", "client", "project"]},
+        "purpose": {"type": "string", "minLength": 1}
+      }
+    },
+    "projects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "repositories"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "repositories": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["url"],
+              "properties": {
+                "url": {"type": "string", "minLength": 1},
+                "default_branch": {"type": ["string", "null"]}
+              }
+            }
+          },
+          "work_tracker": {
+            "type": "object",
+            "additionalProperties": true,
+            "default": {"type": "github_issues"},
+            "properties": {
+              "type": {
+                "type": "string",
+                "default": "github_issues"
+              }
+            }
+          },
+          "services": {
+            "type": "array",
+            "items": {"type": "string"},
+            "default": []
+          }
+        }
+      }
+    },
+    "approvals": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["mode"],
+      "properties": {
+        "mode": {"const": "hermes_default"}
+      }
+    }
+  }
+}
+

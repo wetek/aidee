@@ -1,0 +1,14 @@
+schema_version: 1
+
+platform:
+  repository: "{{ aidee_repository_url }}"
+  default_version: 0.1.0
+
+controller:
+  id: aidee-controller
+  state_path: controller
+  dashboard_hostname: null
+  telegram_username: null
+
+assistants: []
+

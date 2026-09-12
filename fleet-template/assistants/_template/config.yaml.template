@@ -1,0 +1,13 @@
+schema_version: 1
+
+assistant:
+  id: "{{ assistant_id }}"
+  name: "{{ assistant_name }}"
+  kind: "{{ assistant_kind }}"
+  purpose: "{{ purpose }}"
+
+projects: []
+
+approvals:
+  mode: hermes_default
+

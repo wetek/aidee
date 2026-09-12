@@ -1,0 +1,31 @@
+schema_version: 1
+platform_version: 0.1.0
+
+runtime:
+  restart_policy: unless-stopped
+  cpu_limit: 2
+  memory_mb: 4096
+  storage_gb: 20
+
+work:
+  default_tracker: github_issues
+  implementation_agent: opencode
+
+approvals:
+  mode: hermes_default
+  investigate_without_approval: true
+  require_approval_for:
+    - implementation
+    - production_deployment
+    - destructive_action
+    - purchase
+    - outbound_message
+
+observability:
+  enabled: false
+  provider: null
+  separate_project_per_assistant: true
+
+state:
+  tracking_policy: platform/policies/state-tracking.yaml
+  recovery_policy: docs/recovery.md
