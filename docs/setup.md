@@ -9,6 +9,30 @@ Before the first response:
 3. Apply both files to every interview question, instruction, status update, error, and completion report.
 4. Start with `Aidee setup [1/6]` and ask only the first question.
 
+## Required files
+
+Before interviewing the owner, confirm that these files loaded:
+
+- `docs/setup.md`
+- `docs/wizard-style.md`
+- `platform/shared-skills/unslop/SKILL.md`
+- `platform/docs/host-bootstrap.md`
+
+If any file is unavailable, stop and name it. Do not reconstruct missing instructions from memory or invent a command.
+
+## Setup states
+
+Follow these states in order:
+
+1. `interview`: Ask all questions in sections 1 through 6. Do not ask the owner to run commands.
+2. `plan`: Show the complete plan, costs, manual actions, risks, and validation steps.
+3. `approval`: Wait for the owner to reply `approve`.
+4. `install`: Give one exact action from the canonical host guide and wait for its result.
+5. `validate`: Run the documented checks without changing the approved scope.
+6. `handoff`: Record confirmed configuration and report unfinished work.
+
+Never enter `install` before completing all six interview sections and receiving approval. Read-only terminal commands are still commands and belong after approval.
+
 ## Two-stage conversation
 
 A new owner cannot begin inside their Aidee controller's Telegram chat because the controller and bot do not exist yet.
@@ -20,6 +44,18 @@ A new owner cannot begin inside their Aidee controller's Telegram chat because t
 5. The controller confirms the summary, writes structured configuration, and curates durable memory.
 
 Chat history is useful evidence, but it is not the configuration source of truth. Do not copy secrets or the raw transcript into memory.
+
+## Setup record
+
+Store confirmed information by purpose:
+
+- Stable owner preferences and working style belong in `USER.md`.
+- Assistant identity and purpose belong in `SOUL.md`.
+- Server, assistant, integration, resource, and approval choices belong in structured fleet configuration.
+- Temporary command output and diagnostic logs are not durable memory.
+- Credentials and authorization links never belong in chat, memory, or Git.
+
+At handoff, send the controller a concise non-secret summary. Do not send the full setup transcript.
 
 ## Safety rules
 
@@ -48,6 +84,8 @@ Ask one question at a time. Follow `wizard-style.md`. Explain unfamiliar terms i
 - Does the owner already have SSH key access?
 
 The first pilot supports a dedicated x86-64 VPS running Ubuntu 24.04 or 26.04. Use at least 2 vCPU, 8 GB RAM, and 60 GB storage for a small pilot. Recommend 4 vCPU, 16 GB RAM, and 100 GB storage when coding agents or several assistants will run concurrently.
+
+Missing swap is a warning, not a setup blocker. Do not create swap automatically. For a host with about 8 GB RAM that will run coding workloads, include optional swap in the plan and explain the disk and performance tradeoff.
 
 ### 3. Access
 
@@ -106,6 +144,8 @@ Before changing anything, summarize:
 Ask the owner to approve this plan.
 
 ## Installation sequence
+
+`platform/docs/host-bootstrap.md` is the only source for host installation commands. Copy commands from it without changing paths. Do not invent a root-level `scripts/` directory.
 
 After approval:
 

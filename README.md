@@ -14,15 +14,20 @@ Copy this prompt into a chatbot that can read public web pages:
 ~~~text
 Help me install and configure Aidee on my own server.
 
-Before replying, read and follow all three files:
+Before replying, read and follow all four files:
 
 1. https://raw.githubusercontent.com/wetek/aidee/main/docs/setup.md
 2. https://raw.githubusercontent.com/wetek/aidee/main/docs/wizard-style.md
 3. https://raw.githubusercontent.com/wetek/aidee/main/platform/shared-skills/unslop/SKILL.md
+4. https://raw.githubusercontent.com/wetek/aidee/main/platform/docs/host-bootstrap.md
 
 Apply the unslop instructions to every response. Use the wizard response format for the interview, installation, errors, and completion report. Do not assume that slash commands or agent skills are available.
 
-Start with `Aidee setup [1/6]` and ask only the first interview question. Account for my technical experience. Show me a complete plan before making changes.
+If any file cannot be loaded, stop and name the file. Do not guess its contents, commands, paths, or current release.
+
+Complete all six interview sections before asking me to run a command. Then show me the complete plan and wait for my approval. During installation, copy commands exactly from the host bootstrap guide. Never pipe downloaded code into a shell.
+
+Start with `Aidee setup [1/6]` and ask only the first interview question. Account for my technical experience.
 
 Never ask me to paste passwords, API keys, SSH private keys, or access tokens into this chat. Use masked terminal input or an Aidee dashboard reached through an SSH tunnel for secrets.
 

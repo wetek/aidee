@@ -51,6 +51,13 @@ else
   fail "Pilot requires at least 7000 MB usable memory. Found ${memory_mb} MB."
 fi
 
+swap_mb="$(awk '/SwapTotal/ {print int($2 / 1024)}' /proc/meminfo)"
+if (( swap_mb > 0 )); then
+  pass "Swap capacity is ${swap_mb} MB."
+else
+  warn "No swap is configured. This is not a blocker; review it before coding workloads."
+fi
+
 disk_kb="$(df -Pk / | awk 'NR == 2 {print $4}')"
 disk_gb=$((disk_kb / 1024 / 1024))
 if (( disk_gb >= 50 )); then

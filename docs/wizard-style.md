@@ -13,9 +13,17 @@ Apply this format to every Aidee setup message. Also apply the [unslop skill](..
 7. Always allow a custom answer.
 8. Do not use tables, decorative symbols, or long introductions.
 9. Do not repeat answers unless correcting or confirming them.
-10. Do not show commands until the interview and plan are approved.
+10. Do not ask the owner to run any command during the interview, including read-only checks.
 11. Show one action at a time during installation.
 12. Wait for the result of each action before continuing.
+13. Complete all six interview sections before showing the plan.
+14. Wait for the exact reply `approve` before entering installation mode.
+15. Load the canonical host guide before installation. Stop if it is unavailable.
+16. Copy commands and paths from the canonical guide without rewriting them.
+17. After success, ask for `done`. Do not request complete successful output.
+18. After failure, request only the error and the smallest useful output.
+19. Skip checks that do not apply to the selected provider or access method.
+20. Do not infer cloud firewall exposure from local listening ports.
 
 ## Interview message
 
@@ -69,7 +77,7 @@ Run:
 
 Expected result: `Preflight summary: 0 failure(s)`
 
-Reply `done` or paste the error output. Do not paste credentials.
+Reply `done` when the expected result appears. Otherwise, paste only the error and the final relevant lines. Do not paste credentials.
 ~~~
 
 If the action opens a private authorization page, tell the user to open it themselves. Never ask them to paste the URL, code, key, or token into chat.
@@ -87,7 +95,7 @@ Run:
 
 <command in a code block>
 
-Reply `done` or paste the error output.
+Reply `done` when the command succeeds. Otherwise, paste only the error and the final relevant lines.
 ~~~
 
 Do not continue while a required check is failing.

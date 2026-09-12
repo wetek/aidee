@@ -31,4 +31,23 @@ Provider browser consoles can corrupt pasted punctuation. Use a normal SSH clien
 
 A default Google Cloud SSH firewall rule may expose port 22 broadly. Before adding credentials, use Identity-Aware Proxy TCP forwarding or restrict the rule to trusted source addresses. Confirm that access still works before closing the original route.
 
+`ss -lntup` reports which addresses and ports a process accepts on the VM. A listener on `0.0.0.0:22` does not prove that the internet can reach port 22. Google Cloud firewall rules determine external reachability.
+
+Check ingress rules in the Google Cloud console under VPC network and Firewall, or run this from an authenticated administration computer:
+
+~~~bash
+gcloud compute firewall-rules list \
+  --project=PROJECT_ID \
+  --filter='direction=INGRESS' \
+  --format='table(name,sourceRanges,allowed,targetTags,disabled)'
+~~~
+
+The setup record should distinguish:
+
+- Local listener: the process and bind address reported by the VM.
+- Cloud ingress: the source ranges and target instances allowed by Google Cloud.
+- Tested path: the SSH method that still works after a firewall change.
+
+Do not claim that a port is public or private until the relevant cloud rule has been checked.
+
 Never commit a project ID, live IP address, SSH user, or private key to the public Aidee repository.
