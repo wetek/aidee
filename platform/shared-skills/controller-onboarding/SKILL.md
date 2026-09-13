@@ -5,7 +5,7 @@ description: Completes the Aidee controller's first-run Telegram branding and da
 
 # Controller onboarding
 
-Complete this workflow before project or assistant work.
+Offer this workflow in the first authorized conversation. The owner may complete Telegram branding now, defer it, or keep the current profile.
 
 ## Read the approved state
 
@@ -38,6 +38,50 @@ After verification, run:
   --status-file /var/lib/aidee/fleet/controller/CONTROLLER_ONBOARDING_STATUS.json \
   --confirmed
 ~~~
+
+## Create the daily update check
+
+If `SETUP_SUMMARY.md` enables daily update checks:
+
+1. Ask the owner to send `/sethome` in this Telegram chat.
+2. Wait for confirmation that it is the home channel.
+3. Run:
+
+~~~bash
+/opt/aidee/source/platform/controller-tools/install-update-cron.py \
+  --status-file /var/lib/aidee/fleet/controller/CONTROLLER_ONBOARDING_STATUS.json \
+  --approved
+~~~
+
+The cron runs every 24 hours. It stays silent when no update exists. When it finds a newer release, it previews the changes and asks the owner before applying knowledge sync. It never updates from cron.
+
+## Offer Telegram branding
+
+Ask:
+
+1. Set up the bot profile now (recommended).
+2. Remind me later.
+3. Keep the current profile.
+
+If the owner chooses later, run:
+
+~~~bash
+/opt/aidee/source/platform/controller-tools/set-telegram-profile-status.py \
+  --status-file /var/lib/aidee/fleet/controller/CONTROLLER_ONBOARDING_STATUS.json \
+  --status deferred \
+  --confirmed
+~~~
+
+If the owner keeps the current profile, run:
+
+~~~bash
+/opt/aidee/source/platform/controller-tools/set-telegram-profile-status.py \
+  --status-file /var/lib/aidee/fleet/controller/CONTROLLER_ONBOARDING_STATUS.json \
+  --status skipped \
+  --confirmed
+~~~
+
+For either choice, skip profile drafting and continue to phone access verification.
 
 ## Draft the bot profile
 

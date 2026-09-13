@@ -96,7 +96,7 @@ def validate_scripts():
             )
 
     python_tools = [
-        ROOT / "platform" / "setup" / "plan.py",
+        *list((ROOT / "platform" / "setup").glob("*.py")),
         *list((ROOT / "platform" / "controller-tools").glob("*.py")),
     ]
     for path in python_tools:
@@ -165,6 +165,7 @@ def validate_setup_guidance():
             raise AssertionError(f"README setup prompt is missing: {required_text}")
 
     setup = (ROOT / "docs" / "setup.md").read_text()
+    latest = (ROOT / "LATEST").read_text().strip()
     for state in ["interview", "plan", "approval", "install", "validate", "handoff"]:
         if f"`{state}`" not in setup:
             raise AssertionError(f"Setup state is missing: {state}")
@@ -172,10 +173,14 @@ def validate_setup_guidance():
         "sudo ./setup.sh --plan setup-plan.json",
         "sudo ./setup.sh",
         "SETUP_PLAN_JSON",
-        "v0.1.0-alpha.3",
+        "v0.1.0-alpha.4",
     ]:
         if required_text not in setup:
             raise AssertionError(f"Setup handoff is missing: {required_text}")
+    if latest != "v0.1.0-alpha.4":
+        raise AssertionError("LATEST does not name the Alpha 4 release")
+    if f'"release": "{latest}"' not in setup:
+        raise AssertionError("Setup guide does not use the LATEST release")
 
     wizard_style = (ROOT / "docs" / "wizard-style.md").read_text()
     for required_text in [

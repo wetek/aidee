@@ -15,3 +15,5 @@ Each release will include:
 
 `v0.1.0-alpha.3` adds verified dashboard access and mandatory controller onboarding.
 
+`v0.1.0-alpha.4` makes Telegram branding optional and adds unprivileged controller knowledge sync.
+

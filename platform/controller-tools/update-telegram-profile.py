@@ -259,7 +259,7 @@ def mark_profile_applied(status_path):
         status = json.loads(status_path.read_text())
     except FileNotFoundError as error:
         raise ProfileError(f"onboarding status not found: {status_path}") from error
-    status["telegram_profile_applied"] = True
+    status["telegram_profile_status"] = "applied"
     temporary = status_path.with_suffix(".tmp")
     temporary.write_text(json.dumps(status, indent=2) + "\n")
     os.chmod(temporary, 0o640)

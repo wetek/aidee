@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-AIDEE_RELEASE="v0.1.0-alpha.3"
+AIDEE_RELEASE="v0.1.0-alpha.4"
 AIDEE_REPOSITORY="https://github.com/wetek/aidee.git"
 AIDEE_CONTROLLER_USER="${AIDEE_CONTROLLER_USER:-aidee-controller}"
 AIDEE_STATE_DIR="${AIDEE_STATE_DIR:-/var/lib/aidee}"
@@ -131,6 +131,9 @@ dashboard_access="$(
 )"
 messaging="$(
   python3 "${plan_tool}" "${stored_plan}" --get controller.messaging
+)"
+daily_update_check="$(
+  python3 "${plan_tool}" "${stored_plan}" --get updates.daily_check
 )"
 telegram_access=""
 telegram_menu_button="false"
@@ -354,17 +357,22 @@ while true; do
         echo "Installed release: ${AIDEE_RELEASE}"
       } >> "${summary}"
 
-      telegram_profile_applied="false"
+      telegram_profile_status="pending"
       telegram_owner_authorized="false"
+      update_check_status="pending"
       if [[ "${messaging}" != *'"telegram"'* ]]; then
-        telegram_profile_applied="true"
+        telegram_profile_status="skipped"
         telegram_owner_authorized="true"
+      fi
+      if [[ "${daily_update_check}" != "true" ]]; then
+        update_check_status="disabled"
       fi
       onboarding_status="${controller_state}/CONTROLLER_ONBOARDING_STATUS.json"
       cat > "${onboarding_status}" <<EOF
 {
   "telegram_owner_authorized": ${telegram_owner_authorized},
-  "telegram_profile_applied": ${telegram_profile_applied},
+  "telegram_profile_status": "${telegram_profile_status}",
+  "update_check_status": "${update_check_status}",
   "dashboard_verified": false
 }
 EOF
@@ -378,21 +386,25 @@ Complete this before project or assistant work.
 Dashboard URL: ${dashboard_url}
 Dashboard menu button: ${telegram_menu_button}
 Telegram access: ${telegram_access:-not selected}
+Daily update check: ${daily_update_check}
 
 1. Read SETUP_SUMMARY.md and confirm it matches the owner's choices.
 2. Pair or allowlist the owner before accepting operational requests.
 3. Ask the owner to run /whoami in Telegram and confirm authorized access.
 4. Run /opt/aidee/source/platform/controller-tools/mark-telegram-authorized.py.
-5. Draft the Telegram bot name, short description, full description, commands, and avatar.
-6. Detect whether an image-generation tool is available.
-7. If available, ask the owner for an avatar style and generate options.
-8. Otherwise, ask the owner to upload a static JPG avatar.
-9. Write the approved profile to TELEGRAM_PROFILE.json.
-10. Apply and verify it with update-telegram-profile.py.
-11. Add the dashboard URL as the Telegram menu button when enabled.
-12. Ask the owner to open the dashboard from their phone.
-13. After the owner confirms it works, run mark-dashboard-verified.py.
-14. Report every changed Telegram field and the verified dashboard URL.
+5. If daily update checks are enabled, set this chat as home and create the update cron.
+6. Offer to set up the Telegram bot profile now, later, or not at all.
+7. If the owner chooses later or skip, record it with set-telegram-profile-status.py.
+8. If the owner chooses now, draft the name, descriptions, commands, and avatar.
+9. Detect whether an image-generation tool is available.
+10. If available, ask the owner for an avatar style and generate options.
+11. Otherwise, ask the owner to upload a static JPG avatar.
+12. Write the approved profile to TELEGRAM_PROFILE.json.
+13. Apply and verify it with update-telegram-profile.py.
+14. Add the dashboard URL as the Telegram menu button when enabled.
+15. Ask the owner to open the dashboard from their phone.
+16. After the owner confirms it works, run mark-dashboard-verified.py.
+17. Report the branding choice, update check, and verified dashboard URL.
 EOF
 
       chown "${AIDEE_CONTROLLER_USER}:${AIDEE_CONTROLLER_USER}" \
@@ -405,19 +417,9 @@ EOF
       step "Complete controller first-run onboarding"
       controller_state="${AIDEE_STATE_DIR}/fleet/controller"
       onboarding_status="${controller_state}/CONTROLLER_ONBOARDING_STATUS.json"
-      if ! python3 - "${onboarding_status}" <<'PY'
-import json
-import sys
-from pathlib import Path
-
-status = json.loads(Path(sys.argv[1]).read_text())
-complete = (
-    status.get("telegram_owner_authorized") is True
-    and status.get("telegram_profile_applied") is True
-    and status.get("dashboard_verified") is True
-)
-raise SystemExit(not complete)
-PY
+      if ! python3 \
+        /opt/aidee/source/platform/setup/onboarding.py \
+        "${onboarding_status}"
       then
         if [[ "${telegram_access}" == "pairing" ]]; then
           echo "Telegram pairing:"
@@ -431,7 +433,7 @@ PY
         echo
         echo "  Read ${controller_state}/CONTROLLER_ONBOARDING.md and complete it."
         echo
-        echo "After bot branding and phone dashboard access are verified, run:"
+        echo "After controller onboarding and phone dashboard access are verified, run:"
         echo "  sudo ./setup.sh"
         exit 0
       fi

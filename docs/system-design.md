@@ -100,14 +100,18 @@ Dashboards and APIs bind to loopback by default. Tailscale Serve is the default 
 The controller completes first-run onboarding before project or assistant work:
 
 1. Authorize the owner through Telegram pairing or an explicit allowlist.
-2. Draft the bot name, descriptions, supported commands, and avatar.
-3. Generate avatar options when image generation is available, or request a JPG upload.
-4. Show the full profile and wait for approval.
-5. Apply and read back the Telegram profile through the Bot API.
-6. Add the verified private dashboard URL as the menu button when selected.
-7. Ask the owner to open the dashboard from their phone.
+2. Offer to configure the bot profile now, later, or not at all.
+3. If accepted, draft the bot name, descriptions, supported commands, and avatar.
+4. Generate avatar options when image generation is available, or request a JPG upload.
+5. Show the full profile and wait for approval.
+6. Apply and read back the Telegram profile through the Bot API.
+7. Add the verified private dashboard URL as the menu button when selected.
+8. Ask the owner to open the dashboard from their phone.
+9. Create the owner-approved daily update check when selected.
 
-Controller setup is complete only after Telegram owner access, bot branding, and phone dashboard access are recorded as verified.
+Controller setup is complete only after Telegram owner access, the owner's branding choice, phone dashboard access, and the update-check choice are recorded.
+
+The daily update job performs preview-only discovery. It stays silent when no update exists and asks the owner before knowledge sync. It never modifies root-owned host files.
 
 ## Assistant provisioning
 

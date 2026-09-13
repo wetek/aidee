@@ -96,7 +96,8 @@ class TelegramProfileTests(unittest.TestCase):
                 json.dumps(
                     {
                         "telegram_owner_authorized": True,
-                        "telegram_profile_applied": False,
+                        "telegram_profile_status": "pending",
+                        "update_check_status": "active",
                         "dashboard_verified": False,
                     }
                 )
@@ -105,7 +106,7 @@ class TelegramProfileTests(unittest.TestCase):
             telegram_profile.mark_profile_applied(status_path)
 
             status = json.loads(status_path.read_text())
-            self.assertTrue(status["telegram_profile_applied"])
+            self.assertEqual(status["telegram_profile_status"], "applied")
             self.assertFalse(status["dashboard_verified"])
 
     def test_rejects_non_https_menu_url(self):

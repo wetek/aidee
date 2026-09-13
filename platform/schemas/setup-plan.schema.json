@@ -11,14 +11,15 @@
     "server",
     "controller",
     "fleet",
-    "recovery"
+    "recovery",
+    "updates"
   ],
   "properties": {
     "schema_version": {
       "const": 1
     },
     "release": {
-      "const": "v0.1.0-alpha.3"
+      "const": "v0.1.0-alpha.4"
     },
     "owner": {
       "type": "object",
@@ -81,7 +82,7 @@
                   "enum": ["pairing", "allowlist"]
                 },
                 "branding": {
-                  "const": "smart"
+                  "const": "offer"
                 },
                 "avatar": {
                   "const": "generate_or_upload"
@@ -121,6 +122,16 @@
         },
         "provider": {
           "enum": ["github", "gitlab", "other", null]
+        }
+      }
+    },
+    "updates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["daily_check"],
+      "properties": {
+        "daily_check": {
+          "type": "boolean"
         }
       }
     }

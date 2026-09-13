@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 
-RELEASE = "v0.1.0-alpha.3"
+RELEASE = "v0.1.0-alpha.4"
 EXPERIENCE = {"beginner", "guided", "advanced"}
 DASHBOARD_ACCESS = {"tailscale", "ssh_tunnel"}
 MESSAGING = {"telegram", "discord", "slack"}
@@ -67,6 +67,7 @@ def validate(plan):
             "controller",
             "fleet",
             "recovery",
+            "updates",
         },
         set(),
         "plan",
@@ -131,7 +132,7 @@ def validate(plan):
             telegram["access"], {"pairing", "allowlist"}, "controller.telegram.access"
         )
         require_choice(
-            telegram["branding"], {"smart"}, "controller.telegram.branding"
+            telegram["branding"], {"offer"}, "controller.telegram.branding"
         )
         require_choice(
             telegram["avatar"],
@@ -187,6 +188,13 @@ def validate(plan):
     require_choice(recovery["private_git"], PRIVATE_GIT, "recovery.private_git")
     require_choice(recovery.get("provider"), GIT_PROVIDERS, "recovery.provider")
 
+    updates = require_object(plan["updates"], "updates")
+    require_exact_keys(updates, {"daily_check"}, set(), "updates")
+    if not isinstance(updates["daily_check"], bool):
+        raise PlanError("updates.daily_check must be true or false")
+    if updates["daily_check"] and "telegram" not in controller["messaging"]:
+        raise PlanError("daily update checks require Telegram in Alpha 4")
+
 
 def read_plan(path):
     try:
@@ -233,6 +241,10 @@ def print_summary(plan):
         print(f"Telegram branding: {telegram['branding']}")
         print(f"Telegram menu button: {str(telegram['menu_button']).lower()}")
     print(f"Private Git backup: {plan['recovery']['private_git']}")
+    print(
+        "Daily update check: "
+        f"{str(plan['updates']['daily_check']).lower()}"
+    )
     print()
     print("Planned assistants:")
     if not plan["fleet"]["assistants"]:

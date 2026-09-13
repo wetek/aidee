@@ -33,6 +33,21 @@ Keep a structured record of my non-secret answers. Once my Aidee controller is a
 
 A terminal-enabled coding agent can inspect the cloned repository and read [docs/setup.md](docs/setup.md) directly.
 
+## Update an existing controller
+
+Copy this prompt into the installed Aidee controller:
+
+~~~text
+Check for the latest Aidee release and update your Aidee knowledge.
+
+Read and follow:
+https://raw.githubusercontent.com/wetek/aidee/main/docs/update-controller.md
+
+Start with the read-only preview. Summarize what changed and ask for my approval before applying the knowledge sync. Do not use sudo or claim that root-owned host files were updated.
+~~~
+
+The sync refreshes controller documentation and shared skills. A separate owner-approved process updates root-owned host scripts and services.
+
 ## Current scope
 
 The first pilot targets one owner using a dedicated Ubuntu VPS. It will prove:
