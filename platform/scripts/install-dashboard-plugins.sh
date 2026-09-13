@@ -45,6 +45,8 @@ chown -R "${AIDEE_CONTROLLER_USER}:${AIDEE_CONTROLLER_USER}" "${destination}"
 chmod -R a+rX "${destination}"
 
 if [[ -x "${hermes_binary}" ]]; then
+  # The positional argument expands inside the child shell.
+  # shellcheck disable=SC2016
   runuser -u "${AIDEE_CONTROLLER_USER}" -- \
     env HOME="${controller_home}" HERMES_HOME="${hermes_home}" \
     bash -c 'printf "n\n" | "$1" plugins enable aidee-fleet' \
