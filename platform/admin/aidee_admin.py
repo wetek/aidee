@@ -136,6 +136,72 @@ def controller_dashboard_credentials():
     return None
 
 
+def controller_telegram_home_channel():
+    candidates = []
+    override_config = os.environ.get("AIDEE_CONTROLLER_CONFIG")
+    if override_config:
+        candidates.append(Path(override_config))
+    override_home = os.environ.get("AIDEE_CONTROLLER_HOME")
+    if override_home:
+        candidates.append(Path(override_home) / ".hermes" / "config.yaml")
+    candidates.append(STATE_ROOT / "controller-home" / ".hermes" / "config.yaml")
+    candidates.append(STATE_ROOT / "controller" / "config.yaml")
+
+    for candidate in candidates:
+        if candidate.is_file():
+            try:
+                data = yaml.safe_load(candidate.read_text())
+                if isinstance(data, dict):
+                    home_chan = (
+                        data.get("platforms", {})
+                        .get("telegram", {})
+                        .get("home_channel")
+                    )
+                    if home_chan and isinstance(home_chan, dict):
+                        return home_chan
+            except Exception:
+                continue
+
+    try:
+        owner = load_json(OWNER_RECORD)
+        if isinstance(owner, dict):
+            if "home_channel" in owner and isinstance(owner["home_channel"], dict):
+                return owner["home_channel"]
+            tid = (
+                owner.get("telegram_id")
+                or owner.get("telegram_user_id")
+                or owner.get("chat_id")
+            )
+            if tid:
+                name = owner.get("name") or "Owner"
+                return {
+                    "platform": "telegram",
+                    "chat_id": str(tid),
+                    "name": name,
+                    "user_id": str(tid),
+                }
+    except Exception:
+        pass
+
+    return None
+
+
+def ensure_runtime_tree_permissions(root_path, uid, gid):
+    for dirpath, dirnames, filenames in os.walk(root_path):
+        current_dir = Path(dirpath)
+        try:
+            os.chmod(current_dir, 0o770)
+            os.chown(current_dir, uid, gid)
+        except OSError:
+            pass
+        for filename in filenames:
+            file_path = current_dir / filename
+            try:
+                os.chown(file_path, uid, gid)
+            except OSError:
+                pass
+
+
 def image_record(version):
     record = load_json(IMAGE_RECORD_ROOT / f"{version}.json")
     image_id = record.get("image_id")
@@ -199,6 +265,7 @@ def create_assistant_state(assistant, image_id, dashboard_url):
     )
     ensure_directory(runtime_dir, CONTAINER_UID, controller_gid, 0o770)
     ensure_directory(runtime_dir / "skins", CONTAINER_UID, controller_gid, 0o770)
+    ensure_directory(runtime_dir / "memories", CONTAINER_UID, controller_gid, 0o770)
     ensure_directory(secret_dir, 0, 0, 0o700)
 
     soul = f"""# {assistant["name"]}
@@ -220,16 +287,30 @@ when safety, a decision, or an error requires it.
         controller_uid,
         controller_gid,
     )
+    user_memory = f"# User\n\n{owner_name()} owns and directs this assistant.\n"
+    memory_content = "# Memory\n"
     write_text(
         fleet_dir / "memories/USER.md",
-        f"# User\n\n{owner_name()} owns and directs this assistant.\n",
+        user_memory,
         controller_uid,
         controller_gid,
     )
     write_text(
         fleet_dir / "memories/MEMORY.md",
-        "# Memory\n",
+        memory_content,
         controller_uid,
+        controller_gid,
+    )
+    write_text(
+        runtime_dir / "memories/USER.md",
+        user_memory,
+        CONTAINER_UID,
+        controller_gid,
+    )
+    write_text(
+        runtime_dir / "memories/MEMORY.md",
+        memory_content,
+        CONTAINER_UID,
         controller_gid,
     )
 
@@ -250,15 +331,22 @@ when safety, a decision, or an error requires it.
         controller_uid,
         controller_gid,
     )
+    runtime_config = {
+        "dashboard": {"public_url": dashboard_url},
+        "display": {"skin": assistant_id},
+        "platforms": {
+            "telegram": {
+                "enabled": True,
+            }
+        },
+    }
+    home_channel = controller_telegram_home_channel()
+    if home_channel:
+        runtime_config["platforms"]["telegram"]["home_channel"] = home_channel
+
     write_text(
         runtime_dir / "config.yaml",
-        yaml.safe_dump(
-            {
-                "dashboard": {"public_url": dashboard_url},
-                "display": {"skin": assistant_id},
-            },
-            sort_keys=False,
-        ),
+        yaml.safe_dump(runtime_config, sort_keys=False),
         CONTAINER_UID,
         controller_gid,
     )
@@ -340,6 +428,7 @@ when safety, a decision, or an error requires it.
             0o600,
         )
 
+    ensure_runtime_tree_permissions(runtime_dir, CONTAINER_UID, controller_gid)
     return fleet_dir, runtime_dir, secret_dir
 
 
@@ -484,8 +573,6 @@ def create_containers(assistant, image_id, fleet_dir, runtime_dir):
             f"{runtime_dir}:/opt/data",
             "--volume",
             f"{fleet_dir / 'SOUL.md'}:/opt/data/SOUL.md",
-            "--volume",
-            f"{fleet_dir / 'memories'}:/opt/data/memories",
             "--env",
             f"HERMES_GID={controller_gid}",
             "--env",

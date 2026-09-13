@@ -180,6 +180,27 @@ class AdminHelperTests(unittest.TestCase):
                 config_data.get("dashboard", {}).get("public_url"),
                 "https://pilot.example.ts.net:8443",
             )
+            self.assertTrue(
+                config_data.get("platforms", {}).get("telegram", {}).get("enabled")
+            )
+            runtime_memories = (
+                state_root
+                / "runtime"
+                / "assistants"
+                / "personal"
+                / "data"
+                / "memories"
+            )
+            self.assertTrue(runtime_memories.is_dir())
+            self.assertEqual(
+                (runtime_memories / "USER.md").read_text(),
+                "# User\n\nExample Owner owns and directs this assistant.\n",
+            )
+            self.assertEqual(
+                (runtime_memories / "MEMORY.md").read_text(),
+                "# Memory\n",
+            )
+            self.assertNotIn("memories:/opt/data/memories", flattened)
             skin_path = (
                 state_root
                 / "runtime"
@@ -384,6 +405,195 @@ class AdminHelperTests(unittest.TestCase):
                 / ".env"
             ).read_text()
             self.assertIn("HERMES_DASHBOARD_BASIC_AUTH_TTL_SECONDS=86400", env_text)
+
+    def test_create_assistant_seeds_runtime_memories_and_home_channel(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            state_root = Path(temporary_directory)
+            image_id = self.create_state(state_root)
+            controller_hermes = state_root / "controller-home" / ".hermes"
+            controller_hermes.mkdir(parents=True)
+            (controller_hermes / "config.yaml").write_text(
+                yaml.safe_dump(
+                    {
+                        "platforms": {
+                            "telegram": {
+                                "enabled": True,
+                                "home_channel": {
+                                    "platform": "telegram",
+                                    "chat_id": "12345678",
+                                    "name": "Owner User",
+                                    "user_id": "12345678",
+                                },
+                            }
+                        }
+                    }
+                )
+            )
+
+            chown_calls = []
+
+            def fake_run(command):
+                if command[:3] == ["docker", "image", "inspect"]:
+                    if "org.opencontainers.image.revision" in command[-1]:
+                        return "testcommit"
+                    return "v0.1.0-alpha.8"
+                if command[:3] == ["git", "-C", str(ROOT)]:
+                    return "testcommit"
+                if command[:2] == ["docker", "ps"]:
+                    return ""
+                if command[:3] == ["tailscale", "status", "--json"]:
+                    return json.dumps(
+                        {"Self": {"DNSName": "pilot.example.ts.net."}}
+                    )
+                return ""
+
+            def fake_directory(path, uid, gid, mode):
+                path.mkdir(parents=True, exist_ok=True)
+                path.chmod(mode)
+                chown_calls.append((str(path), uid, gid))
+
+            def fake_chown(path, uid, gid):
+                chown_calls.append((str(path), uid, gid))
+
+            request = json.loads(
+                (ROOT / "fleet-template" / "assistant-request.json.example").read_text()
+            )
+
+            with (
+                mock.patch.object(aidee_admin, "STATE_ROOT", state_root),
+                mock.patch.object(
+                    aidee_admin,
+                    "IMAGE_RECORD_ROOT",
+                    state_root / "runtime" / "images",
+                ),
+                mock.patch.object(
+                    aidee_admin,
+                    "OWNER_RECORD",
+                    state_root / "owner.json",
+                ),
+                mock.patch.object(aidee_admin, "SOURCE_ROOT", ROOT),
+                mock.patch.object(
+                    aidee_admin,
+                    "controller_identity",
+                    return_value=(1000, 1000),
+                ),
+                mock.patch.object(aidee_admin, "run", side_effect=fake_run),
+                mock.patch.object(aidee_admin, "validate_capacity_and_ports"),
+                mock.patch.object(aidee_admin.os, "chown", side_effect=fake_chown),
+                mock.patch.object(
+                    aidee_admin,
+                    "ensure_directory",
+                    side_effect=fake_directory,
+                ),
+            ):
+                result = aidee_admin.create_assistant(request)
+
+            self.assertEqual(result["status"], "provisioning")
+            runtime_dir = state_root / "runtime" / "assistants" / "personal" / "data"
+            memories_dir = runtime_dir / "memories"
+            self.assertTrue(memories_dir.is_dir())
+            self.assertEqual(
+                (memories_dir / "USER.md").read_text(),
+                "# User\n\nExample Owner owns and directs this assistant.\n",
+            )
+            self.assertEqual(
+                (memories_dir / "MEMORY.md").read_text(),
+                "# Memory\n",
+            )
+            config_data = yaml.safe_load((runtime_dir / "config.yaml").read_text())
+            telegram_cfg = config_data.get("platforms", {}).get("telegram", {})
+            self.assertTrue(telegram_cfg.get("enabled"))
+            self.assertEqual(
+                telegram_cfg.get("home_channel"),
+                {
+                    "platform": "telegram",
+                    "chat_id": "12345678",
+                    "name": "Owner User",
+                    "user_id": "12345678",
+                },
+            )
+
+            # Check that container UID 10000 was applied to runtime_dir / memories
+            container_uid_chowns = [
+                call for call in chown_calls if call[1] == aidee_admin.CONTAINER_UID
+            ]
+            self.assertTrue(any(str(memories_dir) in call[0] for call in container_uid_chowns))
+            self.assertTrue(any(str(memories_dir / "MEMORY.md") in call[0] for call in container_uid_chowns))
+
+    def test_create_assistant_inherits_owner_record_telegram_id(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            state_root = Path(temporary_directory)
+            image_id = self.create_state(state_root)
+            (state_root / "owner.json").write_text(
+                json.dumps({"name": "Example Owner", "telegram_id": "987654321"})
+            )
+
+            def fake_run(command):
+                if command[:3] == ["docker", "image", "inspect"]:
+                    if "org.opencontainers.image.revision" in command[-1]:
+                        return "testcommit"
+                    return "v0.1.0-alpha.8"
+                if command[:3] == ["git", "-C", str(ROOT)]:
+                    return "testcommit"
+                if command[:2] == ["docker", "ps"]:
+                    return ""
+                if command[:3] == ["tailscale", "status", "--json"]:
+                    return json.dumps(
+                        {"Self": {"DNSName": "pilot.example.ts.net."}}
+                    )
+                return ""
+
+            def fake_directory(path, uid, gid, mode):
+                path.mkdir(parents=True, exist_ok=True)
+                path.chmod(mode)
+
+            request = json.loads(
+                (ROOT / "fleet-template" / "assistant-request.json.example").read_text()
+            )
+
+            with (
+                mock.patch.object(aidee_admin, "STATE_ROOT", state_root),
+                mock.patch.object(
+                    aidee_admin,
+                    "IMAGE_RECORD_ROOT",
+                    state_root / "runtime" / "images",
+                ),
+                mock.patch.object(
+                    aidee_admin,
+                    "OWNER_RECORD",
+                    state_root / "owner.json",
+                ),
+                mock.patch.object(aidee_admin, "SOURCE_ROOT", ROOT),
+                mock.patch.object(
+                    aidee_admin,
+                    "controller_identity",
+                    return_value=(1000, 1000),
+                ),
+                mock.patch.object(aidee_admin, "run", side_effect=fake_run),
+                mock.patch.object(aidee_admin, "validate_capacity_and_ports"),
+                mock.patch.object(aidee_admin.os, "chown"),
+                mock.patch.object(
+                    aidee_admin,
+                    "ensure_directory",
+                    side_effect=fake_directory,
+                ),
+            ):
+                result = aidee_admin.create_assistant(request)
+
+            self.assertEqual(result["status"], "provisioning")
+            runtime_dir = state_root / "runtime" / "assistants" / "personal" / "data"
+            config_data = yaml.safe_load((runtime_dir / "config.yaml").read_text())
+            telegram_cfg = config_data.get("platforms", {}).get("telegram", {})
+            self.assertTrue(telegram_cfg.get("enabled"))
+            self.assertEqual(
+                telegram_cfg.get("home_channel"),
+                {
+                    "platform": "telegram",
+                    "chat_id": "987654321",
+                    "name": "Example Owner",
+                    "user_id": "987654321",
+                },
+            )
 
     def test_upserts_env_values_without_dropping_other_keys(self):
         updated = aidee_admin.upsert_env(
