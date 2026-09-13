@@ -32,9 +32,9 @@ class DraftFeedbackIssueTests(unittest.TestCase):
                 "--body-file",
                 str(body),
                 "--host-release",
-                "v0.1.0-alpha.5",
+                "v0.1.0-alpha.6",
                 "--knowledge-release",
-                "v0.1.0-alpha.5",
+                "v0.1.0-alpha.6",
                 "--channel",
                 "telegram",
             )
@@ -48,8 +48,8 @@ class DraftFeedbackIssueTests(unittest.TestCase):
         composed = "\n".join(lines[1:-1])
         url = lines[-1]
         self.assertIn("Kind: bug", composed)
-        self.assertIn("Host release: v0.1.0-alpha.5", composed)
-        self.assertIn("Knowledge release: v0.1.0-alpha.5", composed)
+        self.assertIn("Host release: v0.1.0-alpha.6", composed)
+        self.assertIn("Knowledge release: v0.1.0-alpha.6", composed)
         self.assertIn("Channel: telegram", composed)
         self.assertIn("status stayed pending", composed)
         parsed = urlparse(url)

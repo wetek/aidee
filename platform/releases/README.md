@@ -19,3 +19,5 @@ Each release will include:
 
 `v0.1.0-alpha.5` adds the shared assistant image and narrow provisioning helper.
 
+`v0.1.0-alpha.6` adds Fleet tab login management for assistant dashboards.
+

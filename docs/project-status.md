@@ -1,7 +1,7 @@
 # Aidee project status
 
-Status: public baseline and first VPS pilot in progress
-Release: `v0.1.0-alpha.4`; Alpha 5 assistant provisioning in progress
+Status: first VPS pilot in progress
+Release: `v0.1.0-alpha.6`
 
 ## Goal
 
@@ -26,21 +26,24 @@ Prove that an owner can use the Aidee setup guide to install a private fleet of 
 - Owner-approved daily update discovery through Hermes cron.
 - Provider-neutral recovery and migration contracts.
 - Chatbot-guided setup interview.
-
-## Awaiting VPS validation
-
 - Shared assistant image with pinned Hermes and OpenCode.
 - Root-owned administration helper and controller-only Unix socket.
 - Assistant create, start, stop, and status requests.
 - Personal assistant provisioning through Telegram.
 - Tailscale HTTPS ports for assistant dashboards.
-- Shared image reuse and cross-assistant isolation.
+- Fleet tab login management for assistant dashboards.
+
+## Awaiting VPS validation
+
+- Shared image reuse and cross-assistant isolation after a clean reinstall.
+- Telegram, MCP, and coding-agent task checks on the pilot.
+- Encrypted non-Git backup and restore.
 
 ## Not implemented
 
-- Telegram, MCP, private Git, and coding-agent validation.
-- Encrypted non-Git backup and restore.
 - End-to-end tests on a clean VPS.
+- Cloudflare dashboard adapter.
+- Assistant delete through the helper.
 
 Do not describe Aidee as installable until the end-to-end pilot passes.
 
@@ -73,4 +76,4 @@ Do not describe Aidee as installable until the end-to-end pilot passes.
 
 ## Next action
 
-Complete the public baseline, publish it, then run the host preflight on the pilot VPS. Keep provider identifiers and live host details in a private operator record.
+Finish remaining pilot checks: Telegram, one MCP server, one coding-agent task, isolation after restart, and recovery. Keep provider identifiers and live host details in a private operator record.

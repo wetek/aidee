@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 
-RELEASE = "v0.1.0-alpha.5"
+RELEASE = "v0.1.0-alpha.6"
 EXPERIENCE = {"beginner", "guided", "advanced"}
 DASHBOARD_ACCESS = {"tailscale", "ssh_tunnel"}
 MESSAGING = {"telegram", "discord", "slack"}
@@ -193,7 +193,7 @@ def validate(plan):
     if not isinstance(updates["daily_check"], bool):
         raise PlanError("updates.daily_check must be true or false")
     if updates["daily_check"] and "telegram" not in controller["messaging"]:
-        raise PlanError("daily update checks require Telegram in Alpha 5")
+        raise PlanError("daily update checks require Telegram in Alpha 6")
 
 
 def read_plan(path):

@@ -94,13 +94,13 @@ Missing swap is a warning, not a setup blocker. Do not create swap automatically
 
 - Which dashboard access method do they want?
   1. Tailscale private HTTPS address (recommended and automated).
-  2. Cloudflare custom subdomain (planned, not automated in Alpha 5).
+  2. Cloudflare custom subdomain (planned, not automated in Alpha 6).
   3. Temporary SSH tunnel.
   4. Another method.
 - Do they want the verified dashboard URL as the Telegram bot menu button?
 - Does the provider firewall currently expose SSH to the whole internet?
 
-A domain is optional. Keep the dashboard bound to server loopback. Use Tailscale for routine private phone access or an SSH tunnel for temporary desktop access. If the owner selects Cloudflare, stop before generating the Alpha 5 plan and explain that its adapter is not implemented yet.
+A domain is optional. Keep the dashboard bound to server loopback. Use Tailscale for routine private phone access or an SSH tunnel for temporary desktop access. If the owner selects Cloudflare, stop before generating the Alpha 6 plan and explain that its adapter is not implemented yet.
 
 After the server is on the tailnet, the controller gives the owner the phone steps: install the Tailscale app, sign in with the same email used to approve the server, turn the VPN on, then open the dashboard from the Telegram bot menu. See `platform/docs/tailscale.md`.
 
@@ -171,7 +171,7 @@ Use this shape:
 ~~~json
 {
   "schema_version": 1,
-  "release": "v0.1.0-alpha.5",
+  "release": "v0.1.0-alpha.6",
   "owner": {
     "name": "Example Owner",
     "experience": "guided"
@@ -212,7 +212,7 @@ Use this shape:
 }
 ~~~
 
-Alpha 5 accepts:
+Alpha 6 accepts:
 
 - Experience: `beginner`, `guided`, or `advanced`.
 - Dashboard access: `tailscale` or `ssh_tunnel`.
@@ -226,9 +226,9 @@ Alpha 5 accepts:
 - Private Git: `later` or `disabled`.
 - Daily update check: `true` or `false`.
 
-Cloudflare and immediate private Git setup remain planned options. Do not place them in an Alpha 5 setup plan.
+Cloudflare and immediate private Git setup remain planned options. Do not place them in an Alpha 6 setup plan.
 
-Alpha 5 delivers update notices through Telegram. Set `daily_check` to `false` when Telegram is not selected.
+Alpha 6 delivers update notices through Telegram. Set `daily_check` to `false` when Telegram is not selected.
 
 ## Bootstrap handoff
 
@@ -237,7 +237,7 @@ After the owner replies `approve`, replace `SETUP_PLAN_JSON` below with the appr
 ~~~bash
 sudo apt-get update
 sudo apt-get install -y git
-git clone --branch v0.1.0-alpha.5 --depth 1 https://github.com/wetek/aidee.git
+git clone --branch v0.1.0-alpha.6 --depth 1 https://github.com/wetek/aidee.git
 cd aidee
 cat > setup-plan.json <<'AIDEE_PLAN'
 SETUP_PLAN_JSON
@@ -281,7 +281,7 @@ The owner still creates or approves third-party accounts and credentials. The pr
 
 The controller's first authorized conversation must offer Telegram branding. The owner may configure it now, defer it, or keep the current profile. If they continue, the controller generates an avatar when an image tool is available or requests a JPG upload, waits for approval, and applies the profile.
 
-After controller onboarding passes, the owner can ask the controller to create an assistant. The controller uses one-question-at-a-time planning, waits for approval, and calls the narrow administration helper. Every assistant uses the validated shared image and separate state.
+After controller onboarding passes, the owner can ask the controller to create an assistant. The controller uses one-question-at-a-time planning, waits for approval, and calls the narrow administration helper. Every assistant uses the validated shared image and separate state. Open the controller Fleet tab to reveal or reset the assistant dashboard password. Do not send that password through Telegram.
 
 ## Completion report
 
