@@ -265,6 +265,7 @@ def build_soul_document(assistant, owner):
         "- Concise response budget: default to 120 words or fewer. Expand only when safety, a decision, or an error requires it.",
         "- Plain direct speech: communicate plainly without preamble, conversational filler, sycophancy, or generic cheerleading.",
         "- Real deliverables: produce working artifacts backed by actual tool execution; never substitute summaries or promises for real execution.",
+        "- Interactive Telegram Choices: When communicating over Telegram and presenting choices, decisions, next steps, or confirmation requests, always use the interactive clarify tool with clickable options so the user can select an option directly rather than typing.",
     ]
     if assistant.get("kind") in {"coding", "project"}:
         sections.extend(

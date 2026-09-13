@@ -103,6 +103,51 @@ class ControllerSyncTests(unittest.TestCase):
                 (hermes_home / "skills" / "example").is_symlink()
             )
 
+    def test_apply_runs_fleet_assistants_sync(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            repository = self.create_repository(directory)
+            hermes_home = directory / "home" / ".hermes"
+
+            sync_marker = directory / "fleet_synced.marker"
+            tool = (
+                repository
+                / "platform"
+                / "controller-tools"
+                / "sync-fleet-assistants.py"
+            )
+            tool.parent.mkdir(parents=True, exist_ok=True)
+            tool.write_text(
+                "#!/usr/bin/env python3\n"
+                "import sys\n"
+                f"open(r'{sync_marker}', 'w').write('synced ' + ' '.join(sys.argv[1:]))\n"
+            )
+            tool.chmod(0o755)
+
+            subprocess.run(
+                ["git", "-C", str(repository), "add", "."], check=True, capture_output=True
+            )
+            subprocess.run(
+                ["git", "-C", str(repository), "commit", "-m", "add sync tool"],
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                ["git", "-C", str(repository), "tag", "-f", RELEASE],
+                check=True,
+                capture_output=True,
+            )
+
+            applied = self.run_sync(
+                repository,
+                hermes_home,
+                "--apply",
+                "--approved",
+            )
+            self.assertEqual(applied.returncode, 0, applied.stderr)
+            self.assertTrue(sync_marker.exists())
+            self.assertEqual(sync_marker.read_text().strip(), "synced --approved")
+
 
 if __name__ == "__main__":
     unittest.main()
