@@ -963,10 +963,36 @@ class AdminHelperTests(unittest.TestCase):
                 self.assertIn("Interactive Telegram Choices", content)
                 self.assertIn("interactive clarify tool with clickable options", content)
                 self.assertIn("Software Engineering Standards", content)
-                self.assertIn("Test-driven verification", content)
-                self.assertIn("Systematic debugging", content)
+                self.assertIn("Test-driven verification (`tdd`)", content)
+                self.assertIn("Systematic debugging (`diagnose`)", content)
+                self.assertIn("Requirements interrogation (`grill-me`, `to-prd`)", content)
+                self.assertIn("Modularity & refactoring (`improve-architecture`)", content)
                 self.assertIn("Pre-commit code review", content)
                 self.assertIn("Clean documentation", content)
+
+                skills_dir = (
+                    state_root
+                    / "runtime"
+                    / "assistants"
+                    / f"test-{kind}"
+                    / "data"
+                    / "skills"
+                )
+                self.assertTrue(skills_dir.is_dir())
+                for skill_name in [
+                    "tdd",
+                    "diagnose",
+                    "grill-me",
+                    "to-prd",
+                    "improve-architecture",
+                    "unslop",
+                ]:
+                    skill_file = skills_dir / skill_name / "SKILL.md"
+                    self.assertTrue(
+                        skill_file.is_file(),
+                        f"Expected skill file missing: {skill_file}",
+                    )
+                    self.assertGreater(len(skill_file.read_text()), 0)
 
 
 if __name__ == "__main__":

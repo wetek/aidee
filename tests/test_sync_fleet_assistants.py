@@ -114,6 +114,7 @@ class SyncFleetAssistantsTests(unittest.TestCase):
         self.assertIn("[dry-run] Would update SOUL.md", result.stdout)
         self.assertEqual(fleet_soul.read_text(), old_content)
         self.assertEqual(runtime_soul.read_text(), old_content)
+        self.assertFalse((asst_runtime / "skills").exists())
 
     def test_sync_personal_and_coding_assistants(self):
         # Setup personal assistant
@@ -210,10 +211,35 @@ class SyncFleetAssistantsTests(unittest.TestCase):
         self.assertIn("Communication Standards (Unslop)", c_fleet_soul)
         self.assertIn("Interactive Telegram Choices", c_fleet_soul)
         self.assertIn("Software Engineering Standards", c_fleet_soul)
-        self.assertIn("Test-driven verification", c_fleet_soul)
-        self.assertIn("Systematic debugging", c_fleet_soul)
+        self.assertIn("Test-driven verification (`tdd`)", c_fleet_soul)
+        self.assertIn("Systematic debugging (`diagnose`)", c_fleet_soul)
+        self.assertIn(
+            "Requirements interrogation (`grill-me`, `to-prd`)", c_fleet_soul
+        )
+        self.assertIn(
+            "Modularity & refactoring (`improve-architecture`)", c_fleet_soul
+        )
         self.assertIn("Pre-commit code review", c_fleet_soul)
         self.assertIn("Clean documentation", c_fleet_soul)
+
+        # Verify shared skills copied to runtime
+        for r_dir in (personal_runtime, coding_runtime):
+            skills_dir = r_dir / "skills"
+            self.assertTrue(skills_dir.is_dir())
+            for skill_name in [
+                "tdd",
+                "diagnose",
+                "grill-me",
+                "to-prd",
+                "improve-architecture",
+                "unslop",
+            ]:
+                skill_file = skills_dir / skill_name / "SKILL.md"
+                self.assertTrue(
+                    skill_file.is_file(),
+                    f"Missing skill file: {skill_file}",
+                )
+                self.assertGreater(len(skill_file.read_text()), 0)
 
 
 if __name__ == "__main__":
