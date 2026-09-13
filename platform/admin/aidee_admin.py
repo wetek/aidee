@@ -32,6 +32,8 @@ DASHBOARD_USERNAME_KEY = "HERMES_DASHBOARD_BASIC_AUTH_USERNAME"
 DASHBOARD_PASSWORD_KEY = "HERMES_DASHBOARD_BASIC_AUTH_PASSWORD"
 DASHBOARD_PASSWORD_HASH_KEY = "HERMES_DASHBOARD_BASIC_AUTH_PASSWORD_HASH"
 DASHBOARD_SECRET_KEY = "HERMES_DASHBOARD_BASIC_AUTH_SECRET"
+DASHBOARD_TTL_KEY = "HERMES_DASHBOARD_BASIC_AUTH_TTL_SECONDS"
+DASHBOARD_TTL_SECONDS = 2592000
 DASHBOARD_USERNAME_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9._-]{0,63}$")
 
 
@@ -119,6 +121,7 @@ def controller_dashboard_credentials():
             password = env_value(content, DASHBOARD_PASSWORD_KEY)
             password_hash = env_value(content, DASHBOARD_PASSWORD_HASH_KEY)
             secret = env_value(content, DASHBOARD_SECRET_KEY)
+            ttl = env_value(content, DASHBOARD_TTL_KEY)
             if username and (password or password_hash):
                 creds = {"username": username}
                 if password:
@@ -127,6 +130,8 @@ def controller_dashboard_credentials():
                     creds["password_hash"] = password_hash
                 if secret:
                     creds["secret"] = secret
+                if ttl:
+                    creds["ttl"] = ttl
                 return creds
     return None
 
@@ -277,6 +282,7 @@ when safety, a decision, or an error requires it.
         dashboard_session_secret = (
             inherited_creds.get("secret") or secrets.token_hex(32)
         )
+        dashboard_ttl = inherited_creds.get("ttl") or str(DASHBOARD_TTL_SECONDS)
         env_lines = [
             f"{DASHBOARD_USERNAME_KEY}={dashboard_username}",
         ]
@@ -287,6 +293,7 @@ when safety, a decision, or an error requires it.
                 f"{DASHBOARD_PASSWORD_HASH_KEY}={dashboard_password_hash}"
             )
         env_lines.append(f"{DASHBOARD_SECRET_KEY}={dashboard_session_secret}")
+        env_lines.append(f"{DASHBOARD_TTL_KEY}={dashboard_ttl}")
         write_text(
             runtime_dir / ".env",
             "\n".join(env_lines) + "\n",
@@ -319,6 +326,7 @@ when safety, a decision, or an error requires it.
                 f"{DASHBOARD_USERNAME_KEY}={DASHBOARD_USERNAME}\n"
                 f"{DASHBOARD_PASSWORD_KEY}={dashboard_password}\n"
                 f"{DASHBOARD_SECRET_KEY}={dashboard_session_secret}\n"
+                f"{DASHBOARD_TTL_KEY}={DASHBOARD_TTL_SECONDS}\n"
             ),
             CONTAINER_UID,
             controller_gid,
@@ -730,6 +738,7 @@ def write_dashboard_password(assistant_id, password, session_secret=None, userna
     updates = {
         DASHBOARD_USERNAME_KEY: username or read_dashboard_username(assistant_id),
         DASHBOARD_PASSWORD_KEY: password,
+        DASHBOARD_TTL_KEY: str(DASHBOARD_TTL_SECONDS),
     }
     if session_secret is not None:
         updates[DASHBOARD_SECRET_KEY] = session_secret
