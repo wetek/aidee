@@ -266,6 +266,7 @@ def build_soul_document(assistant, owner):
         "- Plain direct speech: communicate plainly without preamble, conversational filler, sycophancy, or generic cheerleading.",
         "- Real deliverables: produce working artifacts backed by actual tool execution; never substitute summaries or promises for real execution.",
         "- Interactive Telegram Choices: When communicating over Telegram and presenting choices, decisions, next steps, or confirmation requests, always use the interactive clarify tool with clickable options so the user can select an option directly rather than typing.",
+        "- Command Approvals on Telegram: The platform UI already displays the command and action buttons. Provide only a concise 1-2 line explanation of the purpose and effects without repeating the command text or boilerplate headers.",
     ]
     if assistant.get("kind") in {"coding", "project"}:
         sections.extend(
