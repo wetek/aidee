@@ -196,6 +196,19 @@ class AdminHelperTests(unittest.TestCase):
                 skin_data["branding"]["response_label"],
                 " ⚕ Personal ",
             )
+            env_text = (
+                state_root
+                / "runtime"
+                / "assistants"
+                / "personal"
+                / "data"
+                / ".env"
+            ).read_text()
+            self.assertIn("HERMES_DASHBOARD_BASIC_AUTH_USERNAME=aidee", env_text)
+            self.assertIn(
+                "HERMES_DASHBOARD_BASIC_AUTH_TTL_SECONDS=2592000",
+                env_text,
+            )
 
     def test_create_assistant_inherits_controller_credentials(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -282,6 +295,10 @@ class AdminHelperTests(unittest.TestCase):
                 "HERMES_DASHBOARD_BASIC_AUTH_SECRET=fixedsecret123",
                 env_text,
             )
+            self.assertIn(
+                "HERMES_DASHBOARD_BASIC_AUTH_TTL_SECONDS=2592000",
+                env_text,
+            )
             self.assertTrue(
                 (
                     state_root
@@ -291,6 +308,82 @@ class AdminHelperTests(unittest.TestCase):
                     / "dashboard-initial-password"
                 ).is_file()
             )
+
+    def test_create_assistant_inherits_controller_custom_ttl(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            state_root = Path(temporary_directory)
+            image_id = self.create_state(state_root)
+            controller_hermes = state_root / "controller-home" / ".hermes"
+            controller_hermes.mkdir(parents=True)
+            (controller_hermes / ".env").write_text(
+                "HERMES_DASHBOARD_BASIC_AUTH_USERNAME=mehdi\n"
+                "HERMES_DASHBOARD_BASIC_AUTH_PASSWORD_HASH=scrypt$test$hash\n"
+                "HERMES_DASHBOARD_BASIC_AUTH_SECRET=fixedsecret123\n"
+                "HERMES_DASHBOARD_BASIC_AUTH_TTL_SECONDS=86400\n"
+            )
+
+            def fake_run(command):
+                if command[:3] == ["docker", "image", "inspect"]:
+                    if "org.opencontainers.image.revision" in command[-1]:
+                        return "testcommit"
+                    return "v0.1.0-alpha.7"
+                if command[:3] == ["git", "-C", str(ROOT)]:
+                    return "testcommit"
+                if command[:2] == ["docker", "ps"]:
+                    return ""
+                if command[:3] == ["tailscale", "status", "--json"]:
+                    return json.dumps(
+                        {"Self": {"DNSName": "pilot.example.ts.net."}}
+                    )
+                return ""
+
+            def fake_directory(path, uid, gid, mode):
+                path.mkdir(parents=True, exist_ok=True)
+                path.chmod(mode)
+
+            request = json.loads(
+                (ROOT / "fleet-template" / "assistant-request.json.example").read_text()
+            )
+
+            with (
+                mock.patch.object(aidee_admin, "STATE_ROOT", state_root),
+                mock.patch.object(
+                    aidee_admin,
+                    "IMAGE_RECORD_ROOT",
+                    state_root / "runtime" / "images",
+                ),
+                mock.patch.object(
+                    aidee_admin,
+                    "OWNER_RECORD",
+                    state_root / "owner.json",
+                ),
+                mock.patch.object(aidee_admin, "SOURCE_ROOT", ROOT),
+                mock.patch.object(
+                    aidee_admin,
+                    "controller_identity",
+                    return_value=(os.getuid(), os.getgid()),
+                ),
+                mock.patch.object(aidee_admin, "run", side_effect=fake_run),
+                mock.patch.object(aidee_admin, "validate_capacity_and_ports"),
+                mock.patch.object(aidee_admin.os, "chown"),
+                mock.patch.object(
+                    aidee_admin,
+                    "ensure_directory",
+                    side_effect=fake_directory,
+                ),
+            ):
+                result = aidee_admin.create_assistant(request)
+
+            self.assertEqual(result["status"], "provisioning")
+            env_text = (
+                state_root
+                / "runtime"
+                / "assistants"
+                / "personal"
+                / "data"
+                / ".env"
+            ).read_text()
+            self.assertIn("HERMES_DASHBOARD_BASIC_AUTH_TTL_SECONDS=86400", env_text)
 
     def test_upserts_env_values_without_dropping_other_keys(self):
         updated = aidee_admin.upsert_env(
@@ -387,6 +480,10 @@ class AdminHelperTests(unittest.TestCase):
                 f"HERMES_DASHBOARD_BASIC_AUTH_PASSWORD={result['dashboard_password']}",
                 env_text,
             )
+            self.assertIn(
+                "HERMES_DASHBOARD_BASIC_AUTH_TTL_SECONDS=2592000",
+                env_text,
+            )
             self.assertNotEqual(result["dashboard_password"], "old")
             self.assertTrue(
                 (
@@ -462,6 +559,7 @@ class AdminHelperTests(unittest.TestCase):
             self.assertIn("MODEL=keep", env_text)
             self.assertIn("HERMES_DASHBOARD_BASIC_AUTH_USERNAME=owner", env_text)
             self.assertIn("HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=manual-pass", env_text)
+            self.assertIn("HERMES_DASHBOARD_BASIC_AUTH_TTL_SECONDS=2592000", env_text)
             self.assertEqual(result["dashboard_username"], "owner")
             self.assertEqual(result["dashboard_password"], "manual-pass")
             self.assertIn(["docker", "restart", "aidee-personal"], commands)
