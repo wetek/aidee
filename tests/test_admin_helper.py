@@ -222,6 +222,8 @@ class AdminHelperTests(unittest.TestCase):
             self.assertIn("# Personal", soul_text)
             self.assertIn("Communication Standards (Unslop)", soul_text)
             self.assertIn("120 words or fewer", soul_text)
+            self.assertIn("Interactive Telegram Choices", soul_text)
+            self.assertIn("interactive clarify tool with clickable options", soul_text)
             self.assertNotIn("Software Engineering Standards", soul_text)
             self.assertNotIn("memories:/opt/data/memories", flattened)
             skin_path = (
@@ -958,6 +960,8 @@ class AdminHelperTests(unittest.TestCase):
                 content = runtime_soul.read_text()
                 self.assertIn("Communication Standards (Unslop)", content)
                 self.assertIn("120 words or fewer", content)
+                self.assertIn("Interactive Telegram Choices", content)
+                self.assertIn("interactive clarify tool with clickable options", content)
                 self.assertIn("Software Engineering Standards", content)
                 self.assertIn("Test-driven verification", content)
                 self.assertIn("Systematic debugging", content)

@@ -147,6 +147,11 @@ ln -sfn "releases/${release}" "${upstream_dir}/current"
 printf '%s\n' "${release}" > "${upstream_dir}/SYNCED_RELEASE"
 chmod 0640 "${upstream_dir}/SYNCED_RELEASE"
 
+fleet_sync_tool="${target}/platform/controller-tools/sync-fleet-assistants.py"
+if [[ -f "${fleet_sync_tool}" ]]; then
+  python3 "${fleet_sync_tool}" --approved
+fi
+
 if [[ "${installed_release}" != "${release}" ]]; then
   cat > "${upstream_dir}/HOST_UPDATE_REQUIRED.md" <<EOF
 # Aidee host update required
