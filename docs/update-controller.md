@@ -91,7 +91,7 @@ sudo "SOURCE_DIR/platform/scripts/update-host.sh" \
   --approved
 ~~~
 
-Replace `SOURCE_DIR`, `RELEASE`, and `OWNER_NAME` with the previewed values. The updater archives the previous source, activates the tagged release, installs the narrow administration helper, and builds and validates the shared assistant image.
+Replace `SOURCE_DIR`, `RELEASE`, and `OWNER_NAME` with the previewed values. The updater archives the previous source, activates the tagged release, installs the administration helper, copies the Fleet dashboard plugin, restarts the controller dashboard when Hermes is present, and builds and validates the shared assistant image.
 
 ## Report
 

@@ -107,6 +107,14 @@ jq -n --arg name "${owner_name}" '{name: $name}' > /etc/aidee/owner.json
 chmod 0644 /etc/aidee/owner.json
 
 "${installed_source}/platform/scripts/install-admin-helper.sh"
+"${installed_source}/platform/scripts/install-dashboard-plugins.sh"
+
+controller_user="${AIDEE_CONTROLLER_USER:-aidee-controller}"
+controller_home="$(getent passwd "${controller_user}" | cut -d: -f6 || true)"
+if [[ -n "${controller_home}" && -x "${controller_home}/.local/bin/hermes" ]]; then
+  "${installed_source}/platform/scripts/install-controller-service.sh"
+fi
+
 "${installed_source}/platform/scripts/build-assistant-image.sh"
 "${installed_source}/platform/scripts/validate-assistant-image.sh"
 
