@@ -65,7 +65,8 @@ EOF
 
 chmod 0644 "/etc/systemd/system/${service}"
 systemctl daemon-reload
-systemctl enable --now "${service}"
+systemctl enable "${service}"
+systemctl restart "${service}"
 
 for _ in {1..20}; do
   if [[ -S /run/aidee/admin.sock ]]; then
