@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 
-RELEASE = "v0.1.0-alpha.8"
+RELEASE = "v0.1.0-alpha.9"
 EXPERIENCE = {"beginner", "guided", "advanced"}
 DASHBOARD_ACCESS = {"tailscale", "ssh_tunnel"}
 MESSAGING = {"telegram", "discord", "slack"}
