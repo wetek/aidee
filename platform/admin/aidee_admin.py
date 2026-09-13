@@ -249,6 +249,37 @@ def owner_name():
     return name
 
 
+def build_soul_document(assistant, owner):
+    sections = [
+        f"# {assistant['name']}",
+        "",
+        f"You are {assistant['name']}, a Hermes assistant owned by {owner}.",
+        "",
+        f"Purpose: {assistant['purpose']}",
+        "",
+        "You run in an isolated Aidee container. Use only your approved files, tools,",
+        "repositories, and services. Never expose credentials or another assistant's",
+        "data.",
+        "",
+        "## Communication Standards (Unslop)",
+        "- Concise response budget: default to 120 words or fewer. Expand only when safety, a decision, or an error requires it.",
+        "- Plain direct speech: communicate plainly without preamble, conversational filler, sycophancy, or generic cheerleading.",
+        "- Real deliverables: produce working artifacts backed by actual tool execution; never substitute summaries or promises for real execution.",
+    ]
+    if assistant.get("kind") in {"coding", "project"}:
+        sections.extend(
+            [
+                "",
+                "## Software Engineering Standards",
+                "- Test-driven verification: enforce TDD and execute real tests (tsc, pytest, vitest) before completing tasks. Never finish without test evidence.",
+                "- Systematic debugging: follow 4-phase root-cause analysis (understand, reproduce, isolate, fix) before modifying code.",
+                "- Pre-commit code review: enforce quality gates, automated linting, type checks, and keep diffs atomic and minimal.",
+                "- Clean documentation: write structured commit messages, clear PR descriptions linking issues, and cited action items.",
+            ]
+        )
+    return "\n".join(sections) + "\n"
+
+
 def create_assistant_state(assistant, image_id, dashboard_url):
     controller_uid, controller_gid = controller_identity()
     assistant_id = safe_assistant_id(assistant["id"])
@@ -268,23 +299,17 @@ def create_assistant_state(assistant, image_id, dashboard_url):
     ensure_directory(runtime_dir / "memories", CONTAINER_UID, controller_gid, 0o770)
     ensure_directory(secret_dir, 0, 0, 0o700)
 
-    soul = f"""# {assistant["name"]}
-
-You are {assistant["name"]}, a Hermes assistant owned by {owner_name()}.
-
-Purpose: {assistant["purpose"]}
-
-You run in an isolated Aidee container. Use only your approved files, tools,
-repositories, and services. Never expose credentials or another assistant's
-data.
-
-Keep user-facing responses concise. Default to 120 words or fewer. Expand only
-when safety, a decision, or an error requires it.
-"""
+    soul = build_soul_document(assistant, owner_name())
     write_text(
         fleet_dir / "SOUL.md",
         soul,
         controller_uid,
+        controller_gid,
+    )
+    write_text(
+        runtime_dir / "SOUL.md",
+        soul,
+        CONTAINER_UID,
         controller_gid,
     )
     user_memory = f"# User\n\n{owner_name()} owns and directs this assistant.\n"
