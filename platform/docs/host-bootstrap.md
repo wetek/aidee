@@ -24,45 +24,46 @@ The controller does not receive sudo access or Docker group membership. A later 
 
 The host bootstrap does not install Node.js, Hermes, Tailscale, messaging credentials, or assistants.
 
-## Canonical commands
+## Setup interface
 
-This page is the only source for host installation commands. Do not move, shorten, combine, or reconstruct them. Stop if this page cannot be loaded.
+The owner calls one setup program. They do not call the internal installers separately.
 
-Do not pipe downloaded code into a shell.
-
-~~~bash
-sudo apt-get update
-sudo apt-get install -y git
-git clone --branch v0.1.0-alpha.1 --depth 1 https://github.com/wetek/aidee.git
-cd aidee
-./platform/scripts/preflight-host.sh
-sudo ./platform/scripts/bootstrap-host.sh
-sudo systemctl reboot
-~~~
-
-Reconnect through the protected SSH path after the host restarts. Install the selected Aidee revision into the root-owned code directory:
+Start with an approved non-secret plan:
 
 ~~~bash
-sudo git clone \
-  --branch v0.1.0-alpha.1 \
-  --depth 1 \
-  https://github.com/wetek/aidee.git \
-  /opt/aidee/source
-/opt/aidee/source/platform/scripts/verify-host.sh
-sudo -u aidee-controller /opt/aidee/source/platform/scripts/init-fleet.sh \
-  --owner-name "OWNER_NAME" \
-  --repository-url "https://github.com/wetek/aidee.git"
-sudo /opt/aidee/source/platform/scripts/install-controller.sh
-sudo /opt/aidee/source/platform/scripts/install-controller-service.sh
+sudo ./setup.sh --plan setup-plan.json
 ~~~
 
-Replace only `OWNER_NAME` with the owner name confirmed in the approved setup plan.
-
-For private phone access, continue with [the Tailscale guide](tailscale.md). After model and messaging credentials are configured through the protected dashboard, run:
+Resume after a reboot or manual authorization:
 
 ~~~bash
-sudo /opt/aidee/source/platform/scripts/install-controller-gateway.sh
+sudo ./setup.sh
 ~~~
+
+Inspect progress:
+
+~~~bash
+sudo ./setup.sh --status
+~~~
+
+`setup.sh` validates the plan before changing the host. It stores the plan and current phase under `/var/lib/aidee/setup`.
+
+## Internal sequence
+
+The setup program calls internal scripts in this order:
+
+1. `preflight-host.sh`
+2. `bootstrap-host.sh`
+3. `verify-host.sh`
+4. `init-fleet.sh`
+5. `install-controller.sh`
+6. `install-controller-service.sh`
+7. `install-tailscale.sh` when selected
+8. `install-controller-gateway.sh` after credentials are configured
+
+If one step fails, rerun `sudo ./setup.sh` after correcting the reported problem. Do not skip phases or call later scripts to bypass a failed check.
+
+The public bootstrap block lives in `docs/setup.md`. Do not publish an alternate root script path or a downloaded-script pipe.
 
 ## Provider-specific security
 

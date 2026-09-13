@@ -21,8 +21,8 @@ jobs:
 
       - name: Check shell scripts
         run: |
-          bash -n platform/scripts/*.sh
-          shellcheck platform/scripts/*.sh
+          bash -n setup.sh platform/scripts/*.sh
+          shellcheck setup.sh platform/scripts/*.sh
 
       - name: Validate schemas and templates
         run: python tests/validate_repository.py

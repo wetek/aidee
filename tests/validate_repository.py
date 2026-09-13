@@ -3,6 +3,7 @@ import json
 import os
 import re
 import stat
+import subprocess
 import tempfile
 from pathlib import Path
 
@@ -31,6 +32,9 @@ def validate_schemas():
     assistant_schema = load_json(
         ROOT / "platform" / "schemas" / "assistant-config.schema.json"
     )
+    setup_plan_schema = load_json(
+        ROOT / "platform" / "schemas" / "setup-plan.schema.json"
+    )
 
     registry = load_yaml_text(
         ROOT / "fleet-template" / "registry.yaml.template",
@@ -49,9 +53,13 @@ def validate_schemas():
             "{{ purpose }}": "Validate Aidee",
         },
     )
+    setup_plan = load_json(
+        ROOT / "fleet-template" / "setup-plan.json.example"
+    )
 
     jsonschema.validate(registry, registry_schema)
     jsonschema.validate(assistant, assistant_schema)
+    jsonschema.validate(setup_plan, setup_plan_schema)
 
 
 def validate_yaml():
@@ -64,6 +72,7 @@ def validate_yaml():
 
 def validate_scripts():
     scripts = list((ROOT / "platform" / "scripts").glob("*.sh"))
+    scripts.append(ROOT / "setup.sh")
     if not scripts:
         raise AssertionError("No platform scripts found")
 
@@ -125,18 +134,13 @@ def validate_setup_guidance():
         raise AssertionError("Unslop SKILL.md metadata is invalid")
 
     readme = (ROOT / "README.md").read_text()
-    required_prompt_paths = [
-        "docs/setup.md",
-        "docs/wizard-style.md",
-        "platform/shared-skills/unslop/SKILL.md",
-        "platform/docs/host-bootstrap.md",
-    ]
+    required_prompt_paths = ["docs/setup.md"]
     for path in required_prompt_paths:
         if path not in readme:
             raise AssertionError(f"README setup prompt does not reference {path}")
 
     for required_text in [
-        "If any file cannot be loaded, stop",
+        "If the guide cannot be loaded, stop",
         "Complete all six interview sections",
         "Never pipe downloaded code into a shell",
     ]:
@@ -147,6 +151,14 @@ def validate_setup_guidance():
     for state in ["interview", "plan", "approval", "install", "validate", "handoff"]:
         if f"`{state}`" not in setup:
             raise AssertionError(f"Setup state is missing: {state}")
+    for required_text in [
+        "sudo ./setup.sh --plan setup-plan.json",
+        "sudo ./setup.sh",
+        "SETUP_PLAN_JSON",
+        "v0.1.0-alpha.2",
+    ]:
+        if required_text not in setup:
+            raise AssertionError(f"Setup handoff is missing: {required_text}")
 
     wizard_style = (ROOT / "docs" / "wizard-style.md").read_text()
     for required_text in [
@@ -160,6 +172,31 @@ def validate_setup_guidance():
             raise AssertionError(
                 f"Wizard response format is missing: {required_text}"
             )
+
+    plan_tool = ROOT / "platform" / "setup" / "plan.py"
+    example_plan = ROOT / "fleet-template" / "setup-plan.json.example"
+    for command in [
+        ["python3", str(plan_tool), str(example_plan)],
+        ["bash", str(ROOT / "setup.sh"), "--check-plan", str(example_plan)],
+    ]:
+        result = subprocess.run(command, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise AssertionError(
+                f"Setup plan validation command failed: {result.stderr}"
+            )
+
+    with tempfile.TemporaryDirectory() as temporary_directory:
+        unsafe_plan = load_json(example_plan)
+        unsafe_plan["controller"]["google_" + "api_key"] = "redacted"  # pragma: allowlist secret
+        unsafe_path = Path(temporary_directory) / "unsafe-plan.json"
+        unsafe_path.write_text(json.dumps(unsafe_plan))
+        result = subprocess.run(
+            ["python3", str(plan_tool), str(unsafe_path)],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            raise AssertionError("Setup plan accepted a credential field")
 
 
 def validate_document_paths():

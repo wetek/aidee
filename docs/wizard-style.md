@@ -18,8 +18,8 @@ Apply this format to every Aidee setup message. Also apply the [unslop skill](..
 12. Wait for the result of each action before continuing.
 13. Complete all six interview sections before showing the plan.
 14. Wait for the exact reply `approve` before entering installation mode.
-15. Load the canonical host guide before installation. Stop if it is unavailable.
-16. Copy commands and paths from the canonical guide without rewriting them.
+15. Use the setup guide's bootstrap block as the first installation action.
+16. Replace only the setup plan placeholder. Do not rewrite its commands or paths.
 17. After success, ask for `done`. Do not request complete successful output.
 18. After failure, request only the error and the smallest useful output.
 19. Skip checks that do not apply to the selected provider or access method.

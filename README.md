@@ -14,18 +14,15 @@ Copy this prompt into a chatbot that can read public web pages:
 ~~~text
 Help me install and configure Aidee on my own server.
 
-Before replying, read and follow all four files:
+Before replying, read and follow this setup guide:
 
-1. https://raw.githubusercontent.com/wetek/aidee/main/docs/setup.md
-2. https://raw.githubusercontent.com/wetek/aidee/main/docs/wizard-style.md
-3. https://raw.githubusercontent.com/wetek/aidee/main/platform/shared-skills/unslop/SKILL.md
-4. https://raw.githubusercontent.com/wetek/aidee/main/platform/docs/host-bootstrap.md
+https://raw.githubusercontent.com/wetek/aidee/main/docs/setup.md
 
-Apply the unslop instructions to every response. Use the wizard response format for the interview, installation, errors, and completion report. Do not assume that slash commands or agent skills are available.
+The guide contains the complete interview, response format, safety rules, setup plan, and installation handoff. Apply its writing rules to every response. Do not assume that slash commands or agent skills are available.
 
-If any file cannot be loaded, stop and name the file. Do not guess its contents, commands, paths, or current release.
+If the guide cannot be loaded, stop and name it. Do not guess its contents, commands, paths, or current release.
 
-Complete all six interview sections before asking me to run a command. Then show me the complete plan and wait for my approval. During installation, copy commands exactly from the host bootstrap guide. Never pipe downloaded code into a shell.
+Complete all six interview sections before asking me to run a command. Then show me the complete plan and wait for my approval. After approval, produce the guide's single bootstrap block. The Aidee setup program should handle the remaining host work. Never pipe downloaded code into a shell.
 
 Start with `Aidee setup [1/6]` and ask only the first interview question. Account for my technical experience.
 
@@ -50,6 +47,7 @@ Tailscale is the recommended first option for private phone access. Cloudflare a
 ## Repository layout
 
 ~~~text
+setup.sh        Resumable host and controller setup program
 docs/           Architecture, setup, recovery, and decisions
 platform/       Versioned Aidee defaults, schemas, policies, and host tools
 fleet-template/ Git-safe templates for private server state

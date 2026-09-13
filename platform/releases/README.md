@@ -9,5 +9,7 @@ Each release will include:
 - Validation results.
 - Known rollback target.
 
-Version 0.1.0 defines contracts only. No image has been built.
+`v0.1.0-alpha.1` defines the first tested controller installation.
+
+`v0.1.0-alpha.2` adds the resumable setup program. Its first clean-host user test is pending.
 

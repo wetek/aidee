@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aidee:schema:setup-plan:1",
+  "title": "Aidee Setup Plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "release",
+    "owner",
+    "server",
+    "controller",
+    "fleet",
+    "recovery"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "release": {
+      "const": "v0.1.0-alpha.2"
+    },
+    "owner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "experience"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "experience": {
+          "enum": ["beginner", "guided", "advanced"]
+        }
+      }
+    },
+    "server": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "dashboard_access"],
+      "properties": {
+        "provider": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_-]*$"
+        },
+        "dashboard_access": {
+          "enum": ["tailscale", "ssh_tunnel"]
+        }
+      }
+    },
+    "controller": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model_provider", "messaging"],
+      "properties": {
+        "model_provider": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_-]*$"
+        },
+        "messaging": {
+          "type": "array",
+          "items": {
+            "enum": ["telegram", "discord", "slack"]
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "fleet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assistants"],
+      "properties": {
+        "assistants": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/assistant"
+          }
+        }
+      }
+    },
+    "recovery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["private_git"],
+      "properties": {
+        "private_git": {
+          "enum": ["later", "disabled"]
+        },
+        "provider": {
+          "enum": ["github", "gitlab", "other", null]
+        }
+      }
+    }
+  },
+  "$defs": {
+    "assistant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "kind", "purpose", "coding_agent", "authority"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "kind": {
+          "enum": ["personal", "coding", "client", "project"]
+        },
+        "purpose": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "coding_agent": {
+          "enum": ["opencode", "claude_code", "codex", "none"]
+        },
+        "repository": {
+          "type": ["string", "null"],
+          "maxLength": 500
+        },
+        "authority": {
+          "enum": [
+            "investigate_only",
+            "pull_request",
+            "approved_merge_deploy"
+          ]
+        }
+      }
+    }
+  }
+}

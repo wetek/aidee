@@ -1,7 +1,7 @@
 # Aidee project status
 
 Status: public baseline and first VPS pilot in progress
-Release: pre-alpha, unreleased
+Release: `v0.1.0-alpha.1`; Alpha 2 setup automation in progress
 
 ## Goal
 
@@ -16,6 +16,8 @@ Prove that an owner can use the Aidee setup guide to install a private fleet of 
 - Loopback-bound controller dashboard service.
 - Hardened persistent controller gateway service.
 - Optional Tailscale installation and phone-access guide.
+- Validated non-secret setup plans.
+- Resumable host and controller setup through `setup.sh`.
 - Provider-neutral recovery and migration contracts.
 - Chatbot-guided setup interview.
 

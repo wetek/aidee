@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "release": "v0.1.0-alpha.2",
+  "owner": {
+    "name": "Example Owner",
+    "experience": "guided"
+  },
+  "server": {
+    "provider": "google_cloud",
+    "dashboard_access": "tailscale"
+  },
+  "controller": {
+    "model_provider": "gemini",
+    "messaging": [
+      "telegram"
+    ]
+  },
+  "fleet": {
+    "assistants": [
+      {
+        "name": "Example Coding Assistant",
+        "kind": "coding",
+        "purpose": "Maintain one approved software project.",
+        "coding_agent": "opencode",
+        "repository": "https://github.com/example/project",
+        "authority": "pull_request"
+      }
+    ]
+  },
+  "recovery": {
+    "private_git": "later",
+    "provider": null
+  }
+}

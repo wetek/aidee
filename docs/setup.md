@@ -1,24 +1,24 @@
 # Set up Aidee
 
-This guide is written for both people and chatbots. A chatbot must interview the owner before recommending commands. A terminal-enabled agent may run read-only checks, but it must show the final plan and receive approval before changing the server.
+This is the complete instruction file for people and chatbots. Do not require another file before starting the interview.
 
 Before the first response:
 
-1. Read [the wizard response format](wizard-style.md).
-2. Read [the unslop skill](../platform/shared-skills/unslop/SKILL.md).
-3. Apply both files to every interview question, instruction, status update, error, and completion report.
-4. Start with `Aidee setup [1/6]` and ask only the first question.
+1. Start with `Aidee setup [1/6]`.
+2. Ask one question.
+3. Give numbered options when likely answers are known.
+4. Put the recommended option first and explain it in one sentence.
+5. Wait for the answer.
 
-## Required files
+Apply these writing rules to every response:
 
-Before interviewing the owner, confirm that these files loaded:
+- Use short sentences and plain words.
+- Remove filler, praise, decorative symbols, and generic conclusions.
+- Do not use tables on a phone-sized screen.
+- Do not repeat the full setup record after each answer.
+- State facts, decisions, and the next action.
 
-- `docs/setup.md`
-- `docs/wizard-style.md`
-- `platform/shared-skills/unslop/SKILL.md`
-- `platform/docs/host-bootstrap.md`
-
-If any file is unavailable, stop and name it. Do not reconstruct missing instructions from memory or invent a command.
+The full [wizard format](wizard-style.md) and [unslop skill](../platform/shared-skills/unslop/SKILL.md) are maintainer references. This guide includes the rules required for setup.
 
 ## Setup states
 
@@ -27,7 +27,7 @@ Follow these states in order:
 1. `interview`: Ask all questions in sections 1 through 6. Do not ask the owner to run commands.
 2. `plan`: Show the complete plan, costs, manual actions, risks, and validation steps.
 3. `approval`: Wait for the owner to reply `approve`.
-4. `install`: Give one exact action from the canonical host guide and wait for its result.
+4. `install`: Give the single bootstrap block in this guide. The setup program handles later host commands.
 5. `validate`: Run the documented checks without changing the approved scope.
 6. `handoff`: Record confirmed configuration and report unfinished work.
 
@@ -74,7 +74,8 @@ Ask one question at a time. Follow `wizard-style.md`. Explain unfamiliar terms i
 
 - What name should the assistants use for their owner?
 - How comfortable is the owner with terminals, SSH, DNS, Docker, and Git?
-- Can the chatbot run terminal commands, or will it guide the owner?
+
+Do not ask the owner to choose who runs each command. If the chatbot has no terminal tools, record `guided` mode. After plan approval, the owner pastes one bootstrap block and the local setup program takes over.
 
 ### 2. Server
 
@@ -143,35 +144,105 @@ Before changing anything, summarize:
 
 Ask the owner to approve this plan.
 
-## Installation sequence
+## Setup plan file
 
-`platform/docs/host-bootstrap.md` is the only source for host installation commands. Copy commands from it without changing paths. Do not invent a root-level `scripts/` directory.
+Convert the approved answers into JSON that matches `platform/schemas/setup-plan.schema.json`. Show the JSON in the plan review.
 
-After approval:
+The plan may contain names, preferences, provider choices, repository URLs, and approval rules. It must not contain passwords, private keys, API keys, bot tokens, authorization URLs, or recovery codes.
 
-1. Connect over SSH instead of a provider's browser console.
-2. Install Git if the clean host does not provide it.
-3. Clone the Aidee repository and check out the selected release.
-4. Run `./platform/scripts/preflight-host.sh`.
-5. Review `platform/scripts/bootstrap-host.sh`.
-6. Run `sudo ./platform/scripts/bootstrap-host.sh`.
-7. Reboot and reconnect through the protected SSH path.
-8. Install the selected Aidee revision under `/opt/aidee/source`.
-9. Run `platform/scripts/verify-host.sh`.
-10. Initialize private fleet state with `platform/scripts/init-fleet.sh`.
-11. Install the pinned unprivileged controller runtime with `platform/scripts/install-controller.sh`.
-12. Install its loopback-bound dashboard service.
-13. Install and authenticate Tailscale when the owner selected phone access.
-14. Publish the dashboard privately with Tailscale Serve.
-15. Enter model and messaging credentials outside chat.
-16. Start and validate the controller gateway.
-17. Transfer the approved non-secret setup summary to the controller.
-18. Provision and validate one assistant.
-19. Provision remaining assistants one at a time.
-20. Configure optional private Git and encrypted backups.
-21. Run the recovery test in [recovery.md](recovery.md).
+Use this shape:
 
-The project status identifies which steps are implemented. Do not invent commands for unfinished steps.
+~~~json
+{
+  "schema_version": 1,
+  "release": "v0.1.0-alpha.2",
+  "owner": {
+    "name": "Example Owner",
+    "experience": "guided"
+  },
+  "server": {
+    "provider": "google_cloud",
+    "dashboard_access": "tailscale"
+  },
+  "controller": {
+    "model_provider": "gemini",
+    "messaging": ["telegram"]
+  },
+  "fleet": {
+    "assistants": [
+      {
+        "name": "Example Assistant",
+        "kind": "coding",
+        "purpose": "Maintain one approved project.",
+        "coding_agent": "opencode",
+        "repository": "https://github.com/example/project",
+        "authority": "pull_request"
+      }
+    ]
+  },
+  "recovery": {
+    "private_git": "later",
+    "provider": null
+  }
+}
+~~~
+
+Alpha 2 accepts:
+
+- Experience: `beginner`, `guided`, or `advanced`.
+- Dashboard access: `tailscale` or `ssh_tunnel`.
+- Messaging: `telegram`, `discord`, or `slack`.
+- Assistant kind: `personal`, `coding`, `client`, or `project`.
+- Coding agent: `opencode`, `claude_code`, `codex`, or `none`.
+- Authority: `investigate_only`, `pull_request`, or `approved_merge_deploy`.
+- Private Git: `later` or `disabled`.
+
+Cloudflare and immediate private Git setup remain planned options. Do not place them in an Alpha 2 setup plan.
+
+## Bootstrap handoff
+
+After the owner replies `approve`, replace `SETUP_PLAN_JSON` below with the approved JSON. Give the owner this single block without changing its other lines:
+
+~~~bash
+sudo apt-get update
+sudo apt-get install -y git
+git clone --branch v0.1.0-alpha.2 --depth 1 https://github.com/wetek/aidee.git
+cd aidee
+cat > setup-plan.json <<'AIDEE_PLAN'
+SETUP_PLAN_JSON
+AIDEE_PLAN
+python3 platform/setup/plan.py setup-plan.json
+sudo ./setup.sh --plan setup-plan.json
+~~~
+
+The owner pastes the whole block into an SSH terminal. Do not ask them to paste successful output into chat.
+
+## Setup program
+
+`setup.sh` handles:
+
+1. Plan validation and host preflight.
+2. Host packages, Docker, and controller account.
+3. Reboot progress.
+4. Pinned Aidee and Hermes installation.
+5. Private fleet state.
+6. Loopback dashboard.
+7. Tailscale installation and private dashboard access when selected.
+8. Controller model and messaging readiness.
+9. Gateway startup and validation.
+10. Non-secret Telegram handoff.
+
+The program stores progress under `/var/lib/aidee/setup`. It prints one next action when it pauses.
+
+After a reboot or manual authorization step, the owner reconnects, returns to the cloned `aidee` directory, and runs:
+
+~~~bash
+sudo ./setup.sh
+~~~
+
+The owner still creates or approves third-party accounts and credentials. The program must guide, wait, verify, and continue without receiving those secrets in chat.
+
+Assistant provisioning is not automated in this alpha. The controller continues that part after the non-secret handoff.
 
 ## Completion report
 

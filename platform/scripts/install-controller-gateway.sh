@@ -27,10 +27,6 @@ if [[ ! -x "${hermes_binary}" ]]; then
   fail "Hermes is not installed for ${AIDEE_CONTROLLER_USER}."
 fi
 
-if ! grep -Eq '^TELEGRAM_BOT_TOKEN=.+$' "${hermes_home}/.env"; then
-  fail "Configure Telegram through the protected dashboard first."
-fi
-
 env \
   HOME="${controller_home}" \
   HERMES_HOME="${hermes_home}" \
