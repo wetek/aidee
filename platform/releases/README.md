@@ -21,3 +21,6 @@ Each release will include:
 
 `v0.1.0-alpha.6` adds Fleet tab login management for assistant dashboards.
 
+`v0.1.0-alpha.7` adds dynamic assistant branding and proactive Telegram onboarding.
+
+

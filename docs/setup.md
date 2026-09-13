@@ -94,13 +94,13 @@ Missing swap is a warning, not a setup blocker. Do not create swap automatically
 
 - Which dashboard access method do they want?
   1. Tailscale private HTTPS address (recommended and automated).
-  2. Cloudflare custom subdomain (planned, not automated in Alpha 6).
+  2. Cloudflare custom subdomain (planned, not automated in Alpha 7).
   3. Temporary SSH tunnel.
   4. Another method.
 - Do they want the verified dashboard URL as the Telegram bot menu button?
 - Does the provider firewall currently expose SSH to the whole internet?
 
-A domain is optional. Keep the dashboard bound to server loopback. Use Tailscale for routine private phone access or an SSH tunnel for temporary desktop access. If the owner selects Cloudflare, stop before generating the Alpha 6 plan and explain that its adapter is not implemented yet.
+A domain is optional. Keep the dashboard bound to server loopback. Use Tailscale for routine private phone access or an SSH tunnel for temporary desktop access. If the owner selects Cloudflare, stop before generating the Alpha 7 plan and explain that its adapter is not implemented yet.
 
 After the server is on the tailnet, the controller gives the owner the phone steps: install the Tailscale app, sign in with the same email used to approve the server, turn the VPN on, then open the dashboard from the Telegram bot menu. See `platform/docs/tailscale.md`.
 
@@ -193,51 +193,51 @@ Use this shape:
   "fleet": {
     "assistants": [
       {
-        "name": "Example Assistant",
-        "kind": "coding",
-        "purpose": "Maintain one approved project.",
-        "coding_agent": "opencode",
-        "repository": "https://github.com/example/project",
-        "authority": "pull_request"
+        "schema_version": 1,
+        "release": "v0.1.0-alpha.7",
+        "owner": {
+          "name": "Example Owner",
+          "experience": "guided"
+        },
+        "dashboard": {
+          "access": "tailscale"
+        },
+        "controller": {
+          "model_provider": "gemini",
+          "messaging": [
+            "telegram"
+          ]
+        },
+        "recovery": {
+          "private_git": "later"
+        },
+        "updates": {
+          "daily_check": true
+        }
       }
-    ]
-  },
-  "recovery": {
-    "private_git": "later",
-    "provider": null
-  },
-  "updates": {
-    "daily_check": true
-  }
-}
-~~~
+      ~~~
 
-Alpha 6 accepts:
+      Alpha 7 accepts:
 
-- Experience: `beginner`, `guided`, or `advanced`.
-- Dashboard access: `tailscale` or `ssh_tunnel`.
-- Messaging: `telegram`, `discord`, or `slack`.
-- Telegram access: `pairing` or `allowlist`.
-- Telegram branding: `offer`.
-- Telegram avatar: `generate_or_upload`.
-- Assistant kind: `personal`, `coding`, `client`, or `project`.
-- Coding agent: `opencode`, `claude_code`, `codex`, or `none`.
-- Authority: `investigate_only`, `pull_request`, or `approved_merge_deploy`.
-- Private Git: `later` or `disabled`.
-- Daily update check: `true` or `false`.
+      - Experience: `beginner`, `guided`, or `advanced`.
+      - Dashboard access: `tailscale` or `ssh_tunnel`.
+      - Controller model provider: `gemini`, `openrouter`, or `claude`.
+      - Controller messaging: `telegram`.
+      - Private Git: `later` or `disabled`.
+      - Daily update check: `true` or `false`.
 
-Cloudflare and immediate private Git setup remain planned options. Do not place them in an Alpha 6 setup plan.
+      Cloudflare and immediate private Git setup remain planned options. Do not place them in an Alpha 7 setup plan.
 
-Alpha 6 delivers update notices through Telegram. Set `daily_check` to `false` when Telegram is not selected.
+      Alpha 7 delivers update notices through Telegram. Set `daily_check` to `false` when Telegram is not selected.
 
-## Bootstrap handoff
+      ## Bootstrap handoff
 
-After the owner replies `approve`, replace `SETUP_PLAN_JSON` below with the approved JSON. Give the owner this single block without changing its other lines:
+      After the owner replies `approve`, replace `SETUP_PLAN_JSON` below with the approved JSON:
 
-~~~bash
-sudo apt-get update
-sudo apt-get install -y git
-git clone --branch v0.1.0-alpha.6 --depth 1 https://github.com/wetek/aidee.git
+      ~~~bash
+      sudo apt-get update
+      sudo apt-get install -y git
+      git clone --branch v0.1.0-alpha.7 --depth 1 https://github.com/wetek/aidee.git
 cd aidee
 cat > setup-plan.json <<'AIDEE_PLAN'
 SETUP_PLAN_JSON
