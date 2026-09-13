@@ -1,8 +1,6 @@
 ARG HERMES_IMAGE=nousresearch/hermes-agent@sha256:9469b3e78b9545b6d576eb8887a95352e9a0ea83730eaf31431cf862ca1010e1
 FROM ${HERMES_IMAGE}
 
-ARG AIDEE_VERSION
-ARG AIDEE_SOURCE_COMMIT
 ARG OPENCODE_VERSION=1.18.3
 
 USER root
@@ -23,6 +21,9 @@ COPY platform/shared-skills/unslop/ /opt/hermes/skills/unslop/
 COPY platform/shared-instructions/ /opt/aidee/shared-instructions/
 COPY platform/shared-workflows/ /opt/aidee/shared-workflows/
 COPY platform/defaults/assistant.yaml /opt/aidee/defaults/assistant.yaml
+
+ARG AIDEE_VERSION
+ARG AIDEE_SOURCE_COMMIT
 
 LABEL org.opencontainers.image.title="Aidee Assistant"
 LABEL org.opencontainers.image.source="https://github.com/wetek/aidee"
