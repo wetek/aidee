@@ -3,6 +3,7 @@ import json
 import os
 import pwd
 import re
+import secrets
 import shutil
 import socket
 import struct
@@ -130,20 +131,22 @@ def owner_name():
     return name
 
 
-def create_assistant_state(assistant, image_id):
+def create_assistant_state(assistant, image_id, dashboard_url):
     controller_uid, controller_gid = controller_identity()
     assistant_id = safe_assistant_id(assistant["id"])
     fleet_dir = STATE_ROOT / f"fleet/assistants/{assistant_id}"
     runtime_dir = STATE_ROOT / f"runtime/assistants/{assistant_id}/data"
+    secret_dir = STATE_ROOT / f"secrets/assistants/{assistant_id}"
 
     if fleet_dir.exists():
         raise AdminError(f"assistant state already exists: {assistant_id}")
 
-    ensure_directory(fleet_dir, controller_uid, controller_gid, 0o2770)
+    ensure_directory(fleet_dir, controller_uid, controller_gid, 0o770)
     ensure_directory(
-        fleet_dir / "memories", controller_uid, controller_gid, 0o2770
+        fleet_dir / "memories", controller_uid, controller_gid, 0o770
     )
     ensure_directory(runtime_dir, CONTAINER_UID, controller_gid, 0o770)
+    ensure_directory(secret_dir, 0, 0, 0o700)
 
     soul = f"""# {assistant["name"]}
 
@@ -196,12 +199,35 @@ when safety, a decision, or an error requires it.
     )
     write_text(
         runtime_dir / "config.yaml",
-        "{}\n",
+        yaml.safe_dump(
+            {"dashboard": {"public_url": dashboard_url}},
+            sort_keys=False,
+        ),
         CONTAINER_UID,
         controller_gid,
     )
+    dashboard_password = secrets.token_urlsafe(24)
+    dashboard_session_secret = secrets.token_hex(32)
+    write_text(
+        runtime_dir / ".env",
+        (
+            "HERMES_DASHBOARD_BASIC_AUTH_USERNAME=aidee\n"
+            f"HERMES_DASHBOARD_BASIC_AUTH_PASSWORD={dashboard_password}\n"
+            f"HERMES_DASHBOARD_BASIC_AUTH_SECRET={dashboard_session_secret}\n"
+        ),
+        CONTAINER_UID,
+        controller_gid,
+        0o600,
+    )
+    write_text(
+        secret_dir / "dashboard-initial-password",
+        dashboard_password + "\n",
+        0,
+        0,
+        0o600,
+    )
 
-    return fleet_dir, runtime_dir
+    return fleet_dir, runtime_dir, secret_dir
 
 
 def update_registry(assistant, image_id, dashboard_url):
@@ -423,20 +449,28 @@ def create_assistant(request):
     validate_capacity_and_ports(assistant)
     record = image_record(assistant["image_version"])
     image_id = record["image_id"]
-    fleet_dir, runtime_dir = create_assistant_state(assistant, image_id)
+    dashboard_url = tailscale_dashboard_url(
+        assistant["dashboard"]["tailscale_https_port"]
+    )
+    fleet_dir, runtime_dir, secret_dir = create_assistant_state(
+        assistant, image_id, dashboard_url
+    )
     container_name = f"aidee-{assistant['id']}"
     proxy_name = f"{container_name}-dashboard-proxy"
     try:
         container_name, proxy_name = create_containers(
             assistant, image_id, fleet_dir, runtime_dir
         )
-        dashboard_url = configure_tailscale_route(assistant)
+        configured_url = configure_tailscale_route(assistant)
+        if configured_url != dashboard_url:
+            raise AdminError("configured dashboard URL does not match planned URL")
         update_registry(assistant, image_id, dashboard_url)
     except Exception:
         subprocess.run(["docker", "rm", "-f", proxy_name], capture_output=True)
         subprocess.run(["docker", "rm", "-f", container_name], capture_output=True)
         shutil.rmtree(fleet_dir, ignore_errors=True)
         shutil.rmtree(runtime_dir.parent, ignore_errors=True)
+        shutil.rmtree(secret_dir, ignore_errors=True)
         raise
     return {
         "status": "provisioning",
@@ -445,7 +479,15 @@ def create_assistant(request):
         "proxy_container_name": proxy_name,
         "image_id": image_id,
         "dashboard_url": dashboard_url,
-        "next_action": "Open the private dashboard and configure model and messaging credentials.",
+        "dashboard_username": "aidee",
+        "dashboard_password_command": (
+            "sudo /opt/aidee/source/platform/scripts/"
+            f"show-assistant-dashboard-password.sh {assistant['id']}"
+        ),
+        "next_action": (
+            "Retrieve the initial dashboard password in SSH, then configure "
+            "model and messaging credentials in the private dashboard."
+        ),
     }
 
 

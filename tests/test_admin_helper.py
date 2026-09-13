@@ -126,6 +126,21 @@ class AdminHelperTests(unittest.TestCase):
                 result["dashboard_url"],
                 "https://pilot.example.ts.net:8443",
             )
+            self.assertEqual(result["dashboard_username"], "aidee")
+            self.assertNotIn("dashboard_password", result)
+            self.assertIn(
+                "show-assistant-dashboard-password.sh personal",
+                result["dashboard_password_command"],
+            )
+            self.assertTrue(
+                (
+                    state_root
+                    / "secrets"
+                    / "assistants"
+                    / "personal"
+                    / "dashboard-initial-password"
+                ).is_file()
+            )
 
             docker_create = [
                 command

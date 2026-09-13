@@ -63,7 +63,9 @@ Do not send Docker flags, host paths, image names, environment files, or shell c
 
 Return the private dashboard URL from the helper response.
 
-The owner creates third-party credentials and enters them through the assistant dashboard. Never request tokens in Telegram.
+The helper also returns a dashboard username and an SSH command for retrieving the initial password. Send the command, not the password. The owner runs it in SSH and enters the result directly into the dashboard.
+
+The owner creates third-party credentials and enters them through the assistant dashboard. Never request dashboard passwords or service tokens in Telegram.
 
 For Telegram:
 
