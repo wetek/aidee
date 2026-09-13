@@ -27,4 +27,6 @@ Each release will include:
 
 `v0.1.0-alpha.9` fixes assistant runtime memories permissions and automates Telegram home channel configuration.
 
+`v0.1.0-alpha.10` activates Unslop and Matt Pocock-grade software engineering standards by default across assistant runtimes.
+
 

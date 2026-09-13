@@ -94,7 +94,7 @@ Missing swap is a warning, not a setup blocker. Do not create swap automatically
 
 - Which dashboard access method do they want?
   1. Tailscale private HTTPS address (recommended and automated).
-  2. Cloudflare custom subdomain (planned, not automated in Alpha 9).
+  2. Cloudflare custom subdomain (planned, not automated in Alpha 10).
   3. Temporary SSH tunnel.
   4. Another method.
 - Do they want the verified dashboard URL as the Telegram bot menu button?
@@ -194,7 +194,7 @@ Use this shape:
     "assistants": [
       {
         "schema_version": 1,
-        "release": "v0.1.0-alpha.9",
+        "release": "v0.1.0-alpha.10",
         "owner": {
           "name": "Example Owner",
           "experience": "guided"

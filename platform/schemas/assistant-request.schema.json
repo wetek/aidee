@@ -258,7 +258,7 @@
           "pattern": "^[^\\r\\n]+$"
         },
         "image_version": {
-          "const": "v0.1.0-alpha.9"
+          "const": "v0.1.0-alpha.10"
         },
         "model_provider": {
           "type": "string",
