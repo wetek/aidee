@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 
-RELEASE = "v0.1.0-alpha.2"
+RELEASE = "v0.1.0-alpha.3"
 EXPERIENCE = {"beginner", "guided", "advanced"}
 DASHBOARD_ACCESS = {"tailscale", "ssh_tunnel"}
 MESSAGING = {"telegram", "discord", "slack"}
@@ -98,7 +98,10 @@ def validate(plan):
 
     controller = require_object(plan["controller"], "controller")
     require_exact_keys(
-        controller, {"model_provider", "messaging"}, set(), "controller"
+        controller,
+        {"model_provider", "messaging", "telegram"},
+        set(),
+        "controller",
     )
     require_text(controller["model_provider"], "controller.model_provider", 100)
     if not IDENTIFIER.fullmatch(controller["model_provider"]):
@@ -113,6 +116,40 @@ def validate(plan):
     for index, messaging in enumerate(controller["messaging"]):
         require_choice(
             messaging, MESSAGING, f"controller.messaging[{index}]"
+        )
+
+    telegram = controller["telegram"]
+    if "telegram" in controller["messaging"]:
+        telegram = require_object(telegram, "controller.telegram")
+        require_exact_keys(
+            telegram,
+            {"access", "branding", "avatar", "menu_button"},
+            set(),
+            "controller.telegram",
+        )
+        require_choice(
+            telegram["access"], {"pairing", "allowlist"}, "controller.telegram.access"
+        )
+        require_choice(
+            telegram["branding"], {"smart"}, "controller.telegram.branding"
+        )
+        require_choice(
+            telegram["avatar"],
+            {"generate_or_upload"},
+            "controller.telegram.avatar",
+        )
+        if not isinstance(telegram["menu_button"], bool):
+            raise PlanError("controller.telegram.menu_button must be true or false")
+        if (
+            telegram["menu_button"]
+            and server["dashboard_access"] == "ssh_tunnel"
+        ):
+            raise PlanError(
+                "Telegram menu button requires persistent dashboard access"
+            )
+    elif telegram is not None:
+        raise PlanError(
+            "controller.telegram must be null when Telegram is not selected"
         )
 
     fleet = require_object(plan["fleet"], "fleet")
@@ -172,6 +209,8 @@ def get_value(plan, dotted_path):
         value = value[part]
     if isinstance(value, (dict, list)):
         print(json.dumps(value, separators=(",", ":")))
+    elif isinstance(value, bool):
+        print(str(value).lower())
     elif value is None:
         print("")
     else:
@@ -188,6 +227,11 @@ def print_summary(plan):
     print(f"Model provider: {plan['controller']['model_provider']}")
     messaging = ", ".join(plan["controller"]["messaging"]) or "none"
     print(f"Messaging: {messaging}")
+    telegram = plan["controller"]["telegram"]
+    if telegram is not None:
+        print(f"Telegram access: {telegram['access']}")
+        print(f"Telegram branding: {telegram['branding']}")
+        print(f"Telegram menu button: {str(telegram['menu_button']).lower()}")
     print(f"Private Git backup: {plan['recovery']['private_git']}")
     print()
     print("Planned assistants:")

@@ -12,6 +12,7 @@ import yaml
 
 
 ROOT = Path(__file__).resolve().parents[1]
+LOCAL_ONLY_DIRECTORIES = {".agents", ".cursor", ".git", ".venv"}
 
 
 def load_json(path: Path):
@@ -35,6 +36,9 @@ def validate_schemas():
     setup_plan_schema = load_json(
         ROOT / "platform" / "schemas" / "setup-plan.schema.json"
     )
+    telegram_profile_schema = load_json(
+        ROOT / "platform" / "schemas" / "telegram-profile.schema.json"
+    )
 
     registry = load_yaml_text(
         ROOT / "fleet-template" / "registry.yaml.template",
@@ -56,10 +60,14 @@ def validate_schemas():
     setup_plan = load_json(
         ROOT / "fleet-template" / "setup-plan.json.example"
     )
+    telegram_profile = load_json(
+        ROOT / "fleet-template" / "telegram-profile.json.example"
+    )
 
     jsonschema.validate(registry, registry_schema)
     jsonschema.validate(assistant, assistant_schema)
     jsonschema.validate(setup_plan, setup_plan_schema)
+    jsonschema.validate(telegram_profile, telegram_profile_schema)
 
 
 def validate_yaml():
@@ -86,6 +94,15 @@ def validate_scripts():
             raise AssertionError(
                 f"Possible patch artifact in {path.relative_to(ROOT)}"
             )
+
+    python_tools = [
+        ROOT / "platform" / "setup" / "plan.py",
+        *list((ROOT / "platform" / "controller-tools").glob("*.py")),
+    ]
+    for path in python_tools:
+        mode = path.stat().st_mode
+        if not mode & stat.S_IXUSR:
+            raise AssertionError(f"Tool is not executable: {path.relative_to(ROOT)}")
 
 
 def validate_fleet_initialization():
@@ -155,7 +172,7 @@ def validate_setup_guidance():
         "sudo ./setup.sh --plan setup-plan.json",
         "sudo ./setup.sh",
         "SETUP_PLAN_JSON",
-        "v0.1.0-alpha.2",
+        "v0.1.0-alpha.3",
     ]:
         if required_text not in setup:
             raise AssertionError(f"Setup handoff is missing: {required_text}")
@@ -209,7 +226,7 @@ def validate_document_paths():
     script_reference = re.compile(r"(platform/scripts/[a-z0-9-]+\.sh)")
 
     for document in markdown_files:
-        if ".git" in document.parts or ".venv" in document.parts:
+        if LOCAL_ONLY_DIRECTORIES.intersection(document.parts):
             continue
 
         text = document.read_text()
@@ -246,7 +263,7 @@ def validate_document_paths():
 def validate_no_pipe_to_shell():
     for pattern in ("*.md", "*.sh"):
         for path in ROOT.rglob(pattern):
-            if ".git" in path.parts or ".venv" in path.parts:
+            if LOCAL_ONLY_DIRECTORIES.intersection(path.parts):
                 continue
             for line_number, line in enumerate(path.read_text().splitlines(), 1):
                 lower = line.lower()

@@ -8,6 +8,8 @@ Use the pinned Aidee platform release as the source of shared behavior and the p
 
 Project assistants own project work. Do not manage their tickets or make product decisions for them. Keep every assistant's files and credentials isolated.
 
+Before any project or assistant work, check `/var/lib/aidee/fleet/controller/CONTROLLER_ONBOARDING.md`. If controller onboarding is incomplete, use the `controller-onboarding` skill and finish it first.
+
 Before provisioning, show the complete plan and ask for approval. Safe inspection and reporting may proceed without approval. Ask before deletion, restoration, network changes, or operating-system upgrades.
 
 Report what changed, how it was validated, and what still needs attention.

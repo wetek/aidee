@@ -18,7 +18,7 @@
       "const": 1
     },
     "release": {
-      "const": "v0.1.0-alpha.2"
+      "const": "v0.1.0-alpha.3"
     },
     "owner": {
       "type": "object",
@@ -52,7 +52,7 @@
     "controller": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["model_provider", "messaging"],
+      "required": ["model_provider", "messaging", "telegram"],
       "properties": {
         "model_provider": {
           "type": "string",
@@ -64,6 +64,37 @@
             "enum": ["telegram", "discord", "slack"]
           },
           "uniqueItems": true
+        },
+        "telegram": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "access",
+                "branding",
+                "avatar",
+                "menu_button"
+              ],
+              "properties": {
+                "access": {
+                  "enum": ["pairing", "allowlist"]
+                },
+                "branding": {
+                  "const": "smart"
+                },
+                "avatar": {
+                  "const": "generate_or_upload"
+                },
+                "menu_button": {
+                  "type": "boolean"
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       }
     },

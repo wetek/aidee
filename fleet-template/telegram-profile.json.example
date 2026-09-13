@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "name": "Example Aidee Controller",
+  "short_description": "Your private AI assistant controller.",
+  "description": "Operates your private Aidee fleet and asks before consequential actions.",
+  "commands": [
+    {
+      "command": "start",
+      "description": "Start or resume a conversation"
+    },
+    {
+      "command": "help",
+      "description": "Show available commands"
+    },
+    {
+      "command": "status",
+      "description": "Show controller and fleet status"
+    }
+  ],
+  "avatar_path": "/var/lib/aidee/controller-home/.hermes/onboarding/avatar.jpg",
+  "menu_button": {
+    "enabled": true,
+    "text": "Open dashboard",
+    "url": "https://example-device.example-tailnet.ts.net"
+  }
+}

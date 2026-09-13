@@ -94,6 +94,15 @@ fi
 runuser -u "${AIDEE_CONTROLLER_USER}" -- \
   ln -sfn "${controller_soul}" "${hermes_home}/SOUL.md"
 
+for skill in unslop controller-onboarding; do
+  skill_source="${script_dir}/../shared-skills/${skill}"
+  if [[ ! -f "${skill_source}/SKILL.md" ]]; then
+    fail "Aidee shared skill is missing: ${skill}"
+  fi
+  runuser -u "${AIDEE_CONTROLLER_USER}" -- \
+    ln -sfn "${skill_source}" "${hermes_home}/skills/${skill}"
+done
+
 runuser -u "${AIDEE_CONTROLLER_USER}" -- \
   env HOME="${controller_home}" \
   "${hermes_binary}" --version

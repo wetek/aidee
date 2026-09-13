@@ -25,4 +25,6 @@ jobs:
           shellcheck setup.sh platform/scripts/*.sh
 
       - name: Validate schemas and templates
-        run: python tests/validate_repository.py
+        run: |
+          python tests/validate_repository.py
+          python -m unittest discover -s tests -p 'test_*.py'

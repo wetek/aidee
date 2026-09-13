@@ -21,6 +21,7 @@
 **/caches/
 **/packages/
 **/node_modules/
+**/__pycache__/
 .venv/
 **/repositories/
 **/worktrees/
@@ -29,4 +30,8 @@
 
 pilot.local.*
 *.private.*
+
+.agents/
+.cursor/plans/
+skills-lock.json
 

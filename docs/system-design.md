@@ -91,9 +91,23 @@ The controller scans Git-safe changes before committing them. Encrypted backups 
 
 ## Secret entry
 
-A chatbot must never receive secrets. The owner enters them through masked terminal input or an authenticated Hermes dashboard reached through an SSH tunnel. A domain is optional.
+A chatbot must never receive secrets. The owner enters them through masked terminal input or a private Hermes dashboard.
 
-Dashboards and APIs bind to loopback by default. Cloudflare Tunnel and Access may provide remote access after explicit setup.
+Dashboards and APIs bind to loopback by default. Tailscale Serve is the default automated phone-access adapter. An SSH tunnel provides temporary access. Cloudflare Tunnel and Access remain a planned custom-domain adapter.
+
+## Controller onboarding
+
+The controller completes first-run onboarding before project or assistant work:
+
+1. Authorize the owner through Telegram pairing or an explicit allowlist.
+2. Draft the bot name, descriptions, supported commands, and avatar.
+3. Generate avatar options when image generation is available, or request a JPG upload.
+4. Show the full profile and wait for approval.
+5. Apply and read back the Telegram profile through the Bot API.
+6. Add the verified private dashboard URL as the menu button when selected.
+7. Ask the owner to open the dashboard from their phone.
+
+Controller setup is complete only after Telegram owner access, bot branding, and phone dashboard access are recorded as verified.
 
 ## Assistant provisioning
 

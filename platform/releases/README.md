@@ -11,5 +11,7 @@ Each release will include:
 
 `v0.1.0-alpha.1` defines the first tested controller installation.
 
-`v0.1.0-alpha.2` adds the resumable setup program. Its first clean-host user test is pending.
+`v0.1.0-alpha.2` adds the resumable setup program.
+
+`v0.1.0-alpha.3` adds verified dashboard access and mandatory controller onboarding.
 

@@ -1,7 +1,7 @@
 # Aidee project status
 
 Status: public baseline and first VPS pilot in progress
-Release: `v0.1.0-alpha.1`; Alpha 2 setup automation in progress
+Release: `v0.1.0-alpha.2`; Alpha 3 controller onboarding in progress
 
 ## Goal
 
@@ -18,6 +18,9 @@ Prove that an owner can use the Aidee setup guide to install a private fleet of 
 - Optional Tailscale installation and phone-access guide.
 - Validated non-secret setup plans.
 - Resumable host and controller setup through `setup.sh`.
+- Mandatory controller first-run onboarding.
+- Approved Telegram profile and avatar updates through the Bot API.
+- Telegram owner and phone dashboard completion markers.
 - Provider-neutral recovery and migration contracts.
 - Chatbot-guided setup interview.
 
