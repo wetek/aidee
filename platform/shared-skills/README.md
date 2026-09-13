@@ -8,6 +8,8 @@ Reusable Hermes skills that every assistant may receive.
 
 `controller-update/SKILL.md` previews and applies owner-approved Aidee knowledge updates without root access.
 
+`controller-feedback/SKILL.md` offers to draft a public GitHub issue when the owner hits a bug, feature request, docs gap, or insight. The owner reviews and submits it. Nothing is shared unless they ask.
+
 Initial skill targets:
 
 - Investigate an incident before proposing implementation.

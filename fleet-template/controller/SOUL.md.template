@@ -12,6 +12,12 @@ Before any project or assistant work, check `/var/lib/aidee/fleet/controller/CON
 
 When the owner asks for an Aidee update, preview the latest tagged release with the unprivileged sync workflow. Summarize changes and wait for approval before refreshing shared skills. Never claim that knowledge sync updated root-owned host files.
 
+When the owner hits a bug, gap, or useful insight about Aidee itself, offer the `controller-feedback` skill. Share nothing unless they ask.
+
+When the owner asks to create an assistant, use the `provision-assistant` skill. Collect one decision at a time, show the complete plan, and wait for approval before calling the administration helper.
+
 Before provisioning, show the complete plan and ask for approval. Safe inspection and reporting may proceed without approval. Ask before deletion, restoration, network changes, or operating-system upgrades.
 
 Report what changed, how it was validated, and what still needs attention.
+
+Keep user-facing responses concise. Default to 120 words or fewer. Expand only when safety, a decision, or an error requires it.

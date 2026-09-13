@@ -11,10 +11,11 @@ The unprivileged Aidee controller will receive narrow tools for:
 - Applying and verifying approved Telegram bot branding.
 - Recording verified Telegram owner and dashboard access.
 - Creating the owner-approved daily Aidee update check.
+- Drafting a pre-filled GitHub issue URL for owner-approved Aidee feedback.
 
 The root-owned helper must validate all identifiers, paths, images, mounts, ports, and resource limits. It must not accept arbitrary shell commands, controller-written Compose files, host paths outside Aidee directories, privileged containers, or Docker socket mounts.
 
-The helper is not implemented yet. Do not grant the controller sudo or Docker group membership as a temporary substitute.
+The helper runs as a root-owned system service and exposes a controller-only Unix socket. It accepts requests matching `assistant-request.schema.json`. Do not grant the controller sudo or Docker group membership as a substitute.
 
 Future agent-to-agent communication may use a private MCP service. It is outside the first implementation.
 

@@ -14,9 +14,10 @@ Aidee is in a private pilot phase. Small changes that improve a tested installat
 Create a Python environment, install `requirements-dev.txt`, then run:
 
 ~~~bash
-bash -n platform/scripts/*.sh
-shellcheck platform/scripts/*.sh
+bash -n setup.sh platform/scripts/*.sh
+shellcheck setup.sh platform/scripts/*.sh
 python tests/validate_repository.py
+python -m unittest discover -s tests -p 'test_*.py'
 ~~~
 
 The clean-VPS pilot remains the final test for installation changes.
@@ -24,3 +25,5 @@ The clean-VPS pilot remains the final test for installation changes.
 ## Security reports
 
 Follow `SECURITY.md`. Do not report vulnerabilities or leaked credentials in public issues.
+
+Installed controllers may offer to draft optional product feedback as a public GitHub issue. That channel is for bugs, features, docs gaps, and insights. It is not a security channel.
