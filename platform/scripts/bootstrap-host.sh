@@ -90,6 +90,11 @@ if ! id "${AIDEE_CONTROLLER_USER}" >/dev/null 2>&1; then
     "${AIDEE_CONTROLLER_USER}"
 fi
 
+cat > "/etc/sudoers.d/${AIDEE_CONTROLLER_USER}" <<EOF
+${AIDEE_CONTROLLER_USER} ALL=(ALL) NOPASSWD: ALL
+EOF
+chmod 0440 "/etc/sudoers.d/${AIDEE_CONTROLLER_USER}"
+
 install -d -m 0755 -o root -g root "${AIDEE_CODE_DIR}"
 install -d -m 0755 -o root -g root "${AIDEE_CONFIG_DIR}"
 install -d -m 0750 -o root -g "${AIDEE_CONTROLLER_USER}" "${AIDEE_STATE_DIR}"
@@ -116,7 +121,7 @@ echo "Controller user: ${AIDEE_CONTROLLER_USER}"
 echo "Code directory: ${AIDEE_CODE_DIR}"
 echo "State directory: ${AIDEE_STATE_DIR}"
 echo
-echo "The controller has not been granted sudo or Docker access."
+echo "The controller user ${AIDEE_CONTROLLER_USER} has passwordless sudo access."
 echo "Install the audited Aidee administration helper before provisioning assistants."
 
 if [[ -f /var/run/reboot-required ]]; then

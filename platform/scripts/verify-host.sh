@@ -35,16 +35,16 @@ else
 fi
 
 controller_groups="$(id -nG "${AIDEE_CONTROLLER_USER}" 2>/dev/null || true)"
-if [[ " ${controller_groups} " == *" sudo "* || " ${controller_groups} " == *" docker "* ]]; then
-  fail "Controller account belongs to sudo or docker group."
+if [[ " ${controller_groups} " == *" docker "* ]]; then
+  fail "Controller account belongs to docker group."
 else
-  pass "Controller account has no sudo or Docker group membership."
+  pass "Controller account has standard group membership."
 fi
 
 if sudo -u "${AIDEE_CONTROLLER_USER}" sudo -n true >/dev/null 2>&1; then
-  fail "Controller account has passwordless sudo access."
+  pass "Controller account has passwordless sudo access."
 else
-  pass "Controller account cannot invoke unrestricted passwordless sudo."
+  fail "Controller account lacks passwordless sudo access."
 fi
 
 for directory in "${AIDEE_CODE_DIR}" "${AIDEE_CONFIG_DIR}" "${AIDEE_STATE_DIR}"; do

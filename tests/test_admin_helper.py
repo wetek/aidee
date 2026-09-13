@@ -475,6 +475,83 @@ class AdminHelperTests(unittest.TestCase):
             with self.assertRaises(aidee_admin.AdminError):
                 aidee_admin.validate_request(request)
 
+    def test_validate_capacity_and_ports_supports_rebalancing(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            state_root = Path(temporary_directory)
+            self.create_state(state_root)
+            registry = yaml.safe_load(
+                (state_root / "fleet" / "registry.yaml").read_text()
+            )
+            registry["assistants"].append(
+                {
+                    "id": "personal",
+                    "name": "Personal",
+                    "kind": "personal",
+                    "status": "running",
+                    "dashboard": {
+                        "host_port": 9121,
+                        "tailscale_https_port": 8443,
+                    },
+                    "resources": {
+                        "cpu_limit": 1.0,
+                        "memory_mb": 2048,
+                    },
+                }
+            )
+            (state_root / "fleet" / "registry.yaml").write_text(
+                yaml.safe_dump(registry, sort_keys=False)
+            )
+            rebalance_assistant = {
+                "id": "personal",
+                "dashboard": {
+                    "host_port": 9121,
+                    "tailscale_https_port": 8443,
+                },
+                "resources": {
+                    "cpu_limit": 1.5,
+                    "memory_mb": 3072,
+                },
+            }
+            with (
+                mock.patch.object(aidee_admin, "STATE_ROOT", state_root),
+                mock.patch("pathlib.Path.read_text", return_value="MemTotal:        16384000 kB\n"),
+                mock.patch("os.cpu_count", return_value=4),
+            ):
+                # Should not raise AdminError when rebalancing the same assistant
+                aidee_admin.validate_capacity_and_ports(rebalance_assistant)
+
+    def test_handle_connection_allows_controller_and_root(self):
+        dummy_conn = mock.MagicMock()
+        valid_payload = json.dumps(
+            {
+                "request_id": "test-req-1",
+                "operation": "list_assistants",
+                "owner_approved": True,
+            }
+        ).encode()
+        dummy_conn.recv.return_value = valid_payload
+
+        with (
+            mock.patch.object(aidee_admin, "peer_uid", return_value=1000),
+            mock.patch.object(aidee_admin, "execute_idempotent", return_value={"ok": True}),
+        ):
+            # Allowed when peer is controller_uid (1000)
+            res = aidee_admin.handle_connection(dummy_conn, 1000)
+            self.assertEqual(res, {"ok": True})
+
+        with (
+            mock.patch.object(aidee_admin, "peer_uid", return_value=0),
+            mock.patch.object(aidee_admin, "execute_idempotent", return_value={"ok": True}),
+        ):
+            # Allowed when peer is root (0)
+            res = aidee_admin.handle_connection(dummy_conn, 1000)
+            self.assertEqual(res, {"ok": True})
+
+        with mock.patch.object(aidee_admin, "peer_uid", return_value=2000):
+            # Rejected for unauthorized uid
+            with self.assertRaises(aidee_admin.AdminError):
+                aidee_admin.handle_connection(dummy_conn, 1000)
+
 
 if __name__ == "__main__":
     unittest.main()
