@@ -200,6 +200,29 @@ class AdminHelperTests(unittest.TestCase):
                 (runtime_memories / "MEMORY.md").read_text(),
                 "# Memory\n",
             )
+            runtime_soul = (
+                state_root
+                / "runtime"
+                / "assistants"
+                / "personal"
+                / "data"
+                / "SOUL.md"
+            )
+            self.assertTrue(runtime_soul.is_file())
+            fleet_soul = (
+                state_root
+                / "fleet"
+                / "assistants"
+                / "personal"
+                / "SOUL.md"
+            )
+            self.assertTrue(fleet_soul.is_file())
+            soul_text = runtime_soul.read_text()
+            self.assertEqual(soul_text, fleet_soul.read_text())
+            self.assertIn("# Personal", soul_text)
+            self.assertIn("Communication Standards (Unslop)", soul_text)
+            self.assertIn("120 words or fewer", soul_text)
+            self.assertNotIn("Software Engineering Standards", soul_text)
             self.assertNotIn("memories:/opt/data/memories", flattened)
             skin_path = (
                 state_root
@@ -513,12 +536,14 @@ class AdminHelperTests(unittest.TestCase):
                 },
             )
 
-            # Check that container UID 10000 was applied to runtime_dir / memories
+            # Check that container UID 10000 was applied to runtime_dir / memories and SOUL.md
             container_uid_chowns = [
                 call for call in chown_calls if call[1] == aidee_admin.CONTAINER_UID
             ]
             self.assertTrue(any(str(memories_dir) in call[0] for call in container_uid_chowns))
             self.assertTrue(any(str(memories_dir / "MEMORY.md") in call[0] for call in container_uid_chowns))
+            self.assertTrue((runtime_dir / "SOUL.md").is_file())
+            self.assertTrue(any(str(runtime_dir / "SOUL.md") in call[0] for call in container_uid_chowns))
 
     def test_create_assistant_inherits_owner_record_telegram_id(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -859,6 +884,85 @@ class AdminHelperTests(unittest.TestCase):
             # Rejected for unauthorized uid
             with self.assertRaises(aidee_admin.AdminError):
                 aidee_admin.handle_connection(dummy_conn, 1000)
+
+    def test_create_assistant_seeds_coding_and_project_engineering_standards(self):
+        for kind in ("coding", "project"):
+            with tempfile.TemporaryDirectory() as temporary_directory:
+                state_root = Path(temporary_directory)
+                self.create_state(state_root)
+                request = json.loads(
+                    (ROOT / "fleet-template" / "assistant-request.json.example").read_text()
+                )
+                request["assistant"]["id"] = f"test-{kind}"
+                request["assistant"]["name"] = f"Test {kind.capitalize()}"
+                request["assistant"]["kind"] = kind
+
+                def fake_run(command):
+                    if command[:3] == ["docker", "image", "inspect"]:
+                        if "org.opencontainers.image.revision" in command[-1]:
+                            return "testcommit"
+                        return "v0.1.0-alpha.9"
+                    if command[:3] == ["git", "-C", str(ROOT)]:
+                        return "testcommit"
+                    if command[:2] == ["docker", "ps"]:
+                        return ""
+                    if command[:3] == ["tailscale", "status", "--json"]:
+                        return json.dumps(
+                            {"Self": {"DNSName": "pilot.example.ts.net."}}
+                        )
+                    return ""
+
+                def fake_directory(path, uid, gid, mode):
+                    path.mkdir(parents=True, exist_ok=True)
+                    path.chmod(mode)
+
+                with (
+                    mock.patch.object(aidee_admin, "STATE_ROOT", state_root),
+                    mock.patch.object(
+                        aidee_admin,
+                        "IMAGE_RECORD_ROOT",
+                        state_root / "runtime" / "images",
+                    ),
+                    mock.patch.object(
+                        aidee_admin,
+                        "OWNER_RECORD",
+                        state_root / "owner.json",
+                    ),
+                    mock.patch.object(aidee_admin, "SOURCE_ROOT", ROOT),
+                    mock.patch.object(
+                        aidee_admin,
+                        "controller_identity",
+                        return_value=(os.getuid(), os.getgid()),
+                    ),
+                    mock.patch.object(aidee_admin, "run", side_effect=fake_run),
+                    mock.patch.object(aidee_admin, "validate_capacity_and_ports"),
+                    mock.patch.object(aidee_admin.os, "chown"),
+                    mock.patch.object(
+                        aidee_admin,
+                        "ensure_directory",
+                        side_effect=fake_directory,
+                    ),
+                ):
+                    result = aidee_admin.create_assistant(request)
+
+                self.assertEqual(result["status"], "provisioning")
+                runtime_soul = (
+                    state_root
+                    / "runtime"
+                    / "assistants"
+                    / f"test-{kind}"
+                    / "data"
+                    / "SOUL.md"
+                )
+                self.assertTrue(runtime_soul.is_file())
+                content = runtime_soul.read_text()
+                self.assertIn("Communication Standards (Unslop)", content)
+                self.assertIn("120 words or fewer", content)
+                self.assertIn("Software Engineering Standards", content)
+                self.assertIn("Test-driven verification", content)
+                self.assertIn("Systematic debugging", content)
+                self.assertIn("Pre-commit code review", content)
+                self.assertIn("Clean documentation", content)
 
 
 if __name__ == "__main__":
