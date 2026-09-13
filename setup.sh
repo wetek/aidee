@@ -418,9 +418,19 @@ Daily update check: ${daily_update_check}
 12. Write the approved profile to TELEGRAM_PROFILE.json.
 13. Apply and verify it with update-telegram-profile.py.
 14. Add the dashboard URL as the Telegram menu button when enabled.
-15. Ask the owner to open the dashboard from their phone.
+15. Ask the owner to open the dashboard from their phone using the phone steps below.
 16. After the owner confirms it works, run mark-dashboard-verified.py.
 17. Report the branding choice, update check, and verified dashboard URL.
+
+## Phone access
+
+Give these steps when the dashboard URL is an https://<device>.<tailnet>.ts.net address. Do not send host install commands.
+
+1. Install the Tailscale app on your phone.
+2. Sign in with the same email you used to approve this server.
+3. Turn the Tailscale VPN on. Wait until the app shows connected.
+4. Open the dashboard from the Telegram bot menu button.
+5. If the dashboard asks you to sign in, use the dashboard username and password from host setup.
 EOF
 
       chown "${AIDEE_CONTROLLER_USER}:${AIDEE_CONTROLLER_USER}" \

@@ -102,6 +102,8 @@ Missing swap is a warning, not a setup blocker. Do not create swap automatically
 
 A domain is optional. Keep the dashboard bound to server loopback. Use Tailscale for routine private phone access or an SSH tunnel for temporary desktop access. If the owner selects Cloudflare, stop before generating the Alpha 5 plan and explain that its adapter is not implemented yet.
 
+After the server is on the tailnet, the controller gives the owner the phone steps: install the Tailscale app, sign in with the same email used to approve the server, turn the VPN on, then open the dashboard from the Telegram bot menu. See `platform/docs/tailscale.md`.
+
 ### 4. Fleet
 
 - How many assistants are needed for the pilot?

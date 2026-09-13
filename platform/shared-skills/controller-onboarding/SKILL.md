@@ -147,7 +147,19 @@ The tool applies and reads back the name, descriptions, commands, avatar, and me
 
 ## Verify phone access
 
-Ask the owner to open the Telegram menu button from their phone. For a Tailscale URL, remind them that Tailscale must be connected.
+Read `DASHBOARD_URL`.
+
+If it is missing or is `http://127.0.0.1:9119`, say phone access is not ready. Do not ask the owner to install Tailscale or run `sudo` commands.
+
+If it is an `https://<device>.<tailnet>.ts.net` address, send these steps. Do not add host install commands.
+
+1. Install the Tailscale app on your phone.
+2. Sign in with the same email you used to approve the server.
+3. Turn the Tailscale VPN on. Wait until the app shows connected.
+4. Open the dashboard from the Telegram bot menu button.
+5. If the dashboard asks you to sign in, use the dashboard username and password from host setup.
+
+Ask the owner to open the menu button after the VPN is on.
 
 After the owner confirms that the dashboard loaded, run:
 
