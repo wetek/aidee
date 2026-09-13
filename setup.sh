@@ -393,6 +393,15 @@ while true; do
 }
 EOF
 
+      controller_cron_args=(--approved --status-file "${onboarding_status}")
+      if [[ "${daily_update_check}" != "true" ]]; then
+        controller_cron_args+=(--skip-update-check)
+      fi
+      runuser -u "${AIDEE_CONTROLLER_USER}" -- \
+        env HOME="${controller_home}" PATH="${controller_home}/.local/bin:${PATH}" \
+        python3 /opt/aidee/source/platform/controller-tools/install-default-crons.py \
+          "${controller_cron_args[@]}"
+
       onboarding="${controller_state}/CONTROLLER_ONBOARDING.md"
       cat > "${onboarding}" <<EOF
 # Controller first-run onboarding
@@ -408,7 +417,7 @@ Daily update check: ${daily_update_check}
 2. Pair or allowlist the owner before accepting operational requests.
 3. Ask the owner to run /whoami in Telegram and confirm authorized access.
 4. Run /opt/aidee/source/platform/controller-tools/mark-telegram-authorized.py.
-5. If daily update checks are enabled, set this chat as home and create the update cron.
+5. Set this chat as home channel (/sethome). Confirm default update check and watchdog crons are active.
 6. Offer to set up the Telegram bot profile now, later, or not at all.
 7. If the owner chooses later or skip, record it with set-telegram-profile-status.py.
 8. If the owner chooses now, draft the name, descriptions, commands, and avatar.

@@ -10,7 +10,7 @@ The unprivileged Aidee controller will receive narrow tools for:
 - Backing up and restoring non-Git state.
 - Applying and verifying approved Telegram bot branding.
 - Recording verified Telegram owner and dashboard access.
-- Creating the owner-approved daily Aidee update check.
+- Creating the owner-approved daily Aidee update check and fleet health watchdog crons.
 - Drafting a pre-filled GitHub issue URL for owner-approved Aidee feedback.
 
 The root-owned helper must validate all identifiers, paths, images, mounts, ports, and resource limits. It must not accept arbitrary shell commands, controller-written Compose files, host paths outside Aidee directories, privileged containers, or Docker socket mounts.
