@@ -27,6 +27,8 @@ shared-instructions/  Rules that apply across the fleet
 shared-skills/        Common Hermes skills
 shared-workflows/     Common operational workflows
 controller-tools/     Host administration interfaces
+admin/                Root-owned narrow administration helper
+container/            Shared assistant image
 provisioning/         Assistant setup wizard
 releases/             Release notes and manifests
 scripts/              Repeatable host bootstrap and verification

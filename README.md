@@ -54,6 +54,7 @@ The first pilot targets one owner using a dedicated Ubuntu VPS. It will prove:
 
 - One unprivileged controller and a narrow root-owned administration helper.
 - Multiple isolated Hermes assistants.
+- One shared assistant image with common coding and MCP runtimes.
 - Telegram, MCP configuration, private Git state backup, and one coding-agent adapter.
 - Recovery on a clean VPS.
 

@@ -19,7 +19,7 @@
       "const": 1
     },
     "release": {
-      "const": "v0.1.0-alpha.4"
+      "const": "v0.1.0-alpha.5"
     },
     "owner": {
       "type": "object",

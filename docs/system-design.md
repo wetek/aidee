@@ -32,11 +32,32 @@ The controller interviews the owner, generates plans and configuration, requests
 
 The controller calls a root-owned Aidee helper for a fixed set of operations. The helper validates assistant identifiers, paths, resource limits, image references, mounts, ports, and requested actions. It never executes a controller-provided shell command or Compose file.
 
+The helper listens on a Unix socket available only to the controller account. It supports fixed image, create, start, stop, and status operations. The controller submits validated JSON requests after owner approval.
+
 ### Assistants
 
 Each assistant runs in a separate Hermes container when credential, resource, or project isolation matters. An assistant can access only its own mounted state, repositories, secrets, and approved network services. It cannot access the controller state, Docker socket, administration helper, or another assistant.
 
 Hermes supports multiple profiles in one container, but Aidee uses separate containers in the first release to keep credentials and resources isolated.
+
+## Shared assistant image
+
+Every assistant on one Aidee release uses the same immutable image ID. Docker stores shared read-only layers once. Each assistant still has a separate container and writable state.
+
+The image derives from a pinned official Hermes image. It adds GitHub CLI, jq, OpenCode, socat, and Aidee shared skills. It contains no identity, memory, project repository, or credential.
+
+The root-owned image record under `/etc/aidee/images` is authoritative. Controller-written requests choose an Aidee version, not a Docker image or build argument.
+
+Assistant containers receive:
+
+- Their own Hermes data directory.
+- Individual mounts for `SOUL.md` and memories.
+- A private Hermes `config.yaml` and `.env` inside its own data directory.
+- Their own CPU, memory, and process limits.
+- A read-only root filesystem and bounded temporary filesystems.
+- A loopback dashboard forwarded to one host port.
+
+They never receive the Docker socket, controller files, another assistant's directory, host networking, or privileged mode.
 
 ## Public code and private state
 
@@ -71,7 +92,7 @@ The owner may configure a private Git remote for approved fleet files. Public Ai
 Git-safe state includes:
 
 - `SOUL.md`
-- `config.yaml`
+- `assistant.yaml`
 - `MEMORY.md` and `USER.md`
 - Project records
 - Custom skills

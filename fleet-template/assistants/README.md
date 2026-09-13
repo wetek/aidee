@@ -5,7 +5,7 @@ Provisioning creates one directory per assistant.
 ~~~text
 <assistant-id>/
   SOUL.md
-  config.yaml
+  assistant.yaml
   memories/
     MEMORY.md
     USER.md

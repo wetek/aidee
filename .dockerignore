@@ -1,0 +1,13 @@
+.git
+.github
+.agents
+.cursor
+.venv
+**/__pycache__
+**/*.pyc
+docs
+fleet-template
+tests
+*.bundle
+*.log
+*.tmp

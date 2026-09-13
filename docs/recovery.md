@@ -11,6 +11,8 @@ An assistant is reconstructable from:
 
 Containers, installed packages, caches, cloned repositories, worktrees, and build output are disposable.
 
+The shared assistant image is also reproducible. Rebuild it from the recorded Aidee release and verify its labels before recreating assistant containers. All assistants on that release must resolve to the same approved image ID.
+
 The same recovery process must work on a clean host from another provider. See migration.md for the transfer sequence.
 
 ## Git-safe state

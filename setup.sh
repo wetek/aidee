@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-AIDEE_RELEASE="v0.1.0-alpha.4"
+AIDEE_RELEASE="v0.1.0-alpha.5"
 AIDEE_REPOSITORY="https://github.com/wetek/aidee.git"
 AIDEE_CONTROLLER_USER="${AIDEE_CONTROLLER_USER:-aidee-controller}"
 AIDEE_STATE_DIR="${AIDEE_STATE_DIR:-/var/lib/aidee}"
@@ -213,6 +213,9 @@ while true; do
           --owner-name "${owner_name}" \
           --repository-url "${AIDEE_REPOSITORY}"
       fi
+      jq -n --arg name "${owner_name}" '{name: $name}' \
+        > /etc/aidee/owner.json
+      chmod 0644 /etc/aidee/owner.json
       set_phase "install_controller"
       ;;
 
@@ -269,6 +272,19 @@ while true; do
       chown "${AIDEE_CONTROLLER_USER}:${AIDEE_CONTROLLER_USER}" \
         "${dashboard_url_file}"
       chmod 0640 "${dashboard_url_file}"
+      set_phase "install_admin_helper"
+      ;;
+
+    install_admin_helper)
+      step "Install the narrow administration helper"
+      /opt/aidee/source/platform/scripts/install-admin-helper.sh
+      set_phase "build_shared_image"
+      ;;
+
+    build_shared_image)
+      step "Build the shared assistant image"
+      /opt/aidee/source/platform/scripts/build-assistant-image.sh
+      /opt/aidee/source/platform/scripts/validate-assistant-image.sh
       set_phase "awaiting_credentials"
       ;;
 

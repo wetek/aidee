@@ -17,6 +17,8 @@ Apply these writing rules to every response:
 - Do not use tables on a phone-sized screen.
 - Do not repeat the full setup record after each answer.
 - State facts, decisions, and the next action.
+- Default to 120 words or fewer.
+- Expand only for safety, a required decision, or an error.
 
 The full [wizard format](wizard-style.md) and [unslop skill](../platform/shared-skills/unslop/SKILL.md) are maintainer references. This guide includes the rules required for setup.
 
@@ -92,13 +94,13 @@ Missing swap is a warning, not a setup blocker. Do not create swap automatically
 
 - Which dashboard access method do they want?
   1. Tailscale private HTTPS address (recommended and automated).
-  2. Cloudflare custom subdomain (planned, not automated in Alpha 4).
+  2. Cloudflare custom subdomain (planned, not automated in Alpha 5).
   3. Temporary SSH tunnel.
   4. Another method.
 - Do they want the verified dashboard URL as the Telegram bot menu button?
 - Does the provider firewall currently expose SSH to the whole internet?
 
-A domain is optional. Keep the dashboard bound to server loopback. Use Tailscale for routine private phone access or an SSH tunnel for temporary desktop access. If the owner selects Cloudflare, stop before generating the Alpha 4 plan and explain that its adapter is not implemented yet.
+A domain is optional. Keep the dashboard bound to server loopback. Use Tailscale for routine private phone access or an SSH tunnel for temporary desktop access. If the owner selects Cloudflare, stop before generating the Alpha 5 plan and explain that its adapter is not implemented yet.
 
 ### 4. Fleet
 
@@ -167,7 +169,7 @@ Use this shape:
 ~~~json
 {
   "schema_version": 1,
-  "release": "v0.1.0-alpha.4",
+  "release": "v0.1.0-alpha.5",
   "owner": {
     "name": "Example Owner",
     "experience": "guided"
@@ -208,7 +210,7 @@ Use this shape:
 }
 ~~~
 
-Alpha 4 accepts:
+Alpha 5 accepts:
 
 - Experience: `beginner`, `guided`, or `advanced`.
 - Dashboard access: `tailscale` or `ssh_tunnel`.
@@ -222,9 +224,9 @@ Alpha 4 accepts:
 - Private Git: `later` or `disabled`.
 - Daily update check: `true` or `false`.
 
-Cloudflare and immediate private Git setup remain planned options. Do not place them in an Alpha 4 setup plan.
+Cloudflare and immediate private Git setup remain planned options. Do not place them in an Alpha 5 setup plan.
 
-Alpha 4 delivers update notices through Telegram. Set `daily_check` to `false` when Telegram is not selected.
+Alpha 5 delivers update notices through Telegram. Set `daily_check` to `false` when Telegram is not selected.
 
 ## Bootstrap handoff
 
@@ -233,7 +235,7 @@ After the owner replies `approve`, replace `SETUP_PLAN_JSON` below with the appr
 ~~~bash
 sudo apt-get update
 sudo apt-get install -y git
-git clone --branch v0.1.0-alpha.4 --depth 1 https://github.com/wetek/aidee.git
+git clone --branch v0.1.0-alpha.5 --depth 1 https://github.com/wetek/aidee.git
 cd aidee
 cat > setup-plan.json <<'AIDEE_PLAN'
 SETUP_PLAN_JSON
@@ -255,13 +257,15 @@ The owner pastes the whole block into an SSH terminal. Do not ask them to paste 
 5. Private fleet state.
 6. Loopback dashboard.
 7. Tailscale installation and private dashboard access when selected.
-8. Controller model and messaging readiness.
-9. Gateway startup and owner authorization.
-10. Telegram bot branding offer.
-11. Telegram dashboard menu button.
-12. Phone dashboard verification.
-13. Optional daily update check that always asks before syncing.
-14. Non-secret Telegram handoff.
+8. Root-owned narrow administration helper.
+9. Shared assistant image build and validation.
+10. Controller model and messaging readiness.
+11. Gateway startup and owner authorization.
+12. Telegram bot branding offer.
+13. Telegram dashboard menu button.
+14. Phone dashboard verification.
+15. Optional daily update check that always asks before syncing.
+16. Non-secret Telegram handoff.
 
 The program stores progress under `/var/lib/aidee/setup`. It prints one next action when it pauses.
 
@@ -275,7 +279,7 @@ The owner still creates or approves third-party accounts and credentials. The pr
 
 The controller's first authorized conversation must offer Telegram branding. The owner may configure it now, defer it, or keep the current profile. If they continue, the controller generates an avatar when an image tool is available or requests a JPG upload, waits for approval, and applies the profile.
 
-Assistant provisioning is not automated in this alpha. It begins only after controller onboarding passes.
+After controller onboarding passes, the owner can ask the controller to create an assistant. The controller uses one-question-at-a-time planning, waits for approval, and calls the narrow administration helper. Every assistant uses the validated shared image and separate state.
 
 ## Completion report
 

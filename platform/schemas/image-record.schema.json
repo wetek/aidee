@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aidee:schema:image-record:1",
+  "title": "Aidee Local Assistant Image Record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "aidee_version",
+    "source_commit",
+    "tag",
+    "image_id",
+    "image_size",
+    "hermes_version",
+    "opencode_version",
+    "validation"
+  ],
+  "properties": {
+    "aidee_version": {
+      "type": "string",
+      "pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+-alpha\\.[0-9]+$"
+    },
+    "source_commit": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "tag": {
+      "type": "string",
+      "pattern": "^aidee-assistant:[a-zA-Z0-9_.-]+$"
+    },
+    "image_id": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "image_size": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "hermes_version": {
+      "const": "v2026.9.11"
+    },
+    "opencode_version": {
+      "const": "1.18.3"
+    },
+    "validation": {
+      "enum": ["built", "validated", "failed"]
+    }
+  }
+}

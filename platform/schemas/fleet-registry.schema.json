@@ -47,12 +47,13 @@
         "platform_version",
         "state_path",
         "container_name",
-        "resources"
+        "resources",
+        "image"
       ],
       "properties": {
         "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
         "name": {"type": "string", "minLength": 1},
-        "kind": {"enum": ["personal", "client", "project"]},
+        "kind": {"enum": ["personal", "coding", "client", "project"]},
         "status": {
           "enum": ["planned", "provisioning", "active", "failed", "stopped", "retired"]
         },
@@ -72,7 +73,14 @@
                 {"type": "integer", "minimum": 1024, "maximum": 65535},
                 {"type": "null"}
               ]
-            }
+            },
+            "tailscale_https_port": {
+              "anyOf": [
+                {"type": "integer", "minimum": 8443, "maximum": 8499},
+                {"type": "null"}
+              ]
+            },
+            "url": {"type": ["string", "null"]}
           }
         },
         "telegram": {
@@ -95,11 +103,21 @@
         "resources": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["cpu_limit", "memory_mb", "storage_gb"],
+          "required": ["cpu_limit", "memory_mb", "storage_gb", "pids_limit"],
           "properties": {
             "cpu_limit": {"type": "number", "exclusiveMinimum": 0},
             "memory_mb": {"type": "integer", "minimum": 512},
-            "storage_gb": {"type": "integer", "minimum": 1}
+            "storage_gb": {"type": "integer", "minimum": 1},
+            "pids_limit": {"type": "integer", "minimum": 64}
+          }
+        },
+        "image": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["aidee_version", "image_id"],
+          "properties": {
+            "aidee_version": {"type": "string", "minLength": 1},
+            "image_id": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}
           }
         }
       }

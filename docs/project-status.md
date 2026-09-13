@@ -1,7 +1,7 @@
 # Aidee project status
 
 Status: public baseline and first VPS pilot in progress
-Release: `v0.1.0-alpha.3`; Alpha 4 update sync and optional branding in progress
+Release: `v0.1.0-alpha.4`; Alpha 5 assistant provisioning in progress
 
 ## Goal
 
@@ -27,11 +27,17 @@ Prove that an owner can use the Aidee setup guide to install a private fleet of 
 - Provider-neutral recovery and migration contracts.
 - Chatbot-guided setup interview.
 
+## Awaiting VPS validation
+
+- Shared assistant image with pinned Hermes and OpenCode.
+- Root-owned administration helper and controller-only Unix socket.
+- Assistant create, start, stop, and status requests.
+- Personal assistant provisioning through Telegram.
+- Tailscale HTTPS ports for assistant dashboards.
+- Shared image reuse and cross-assistant isolation.
+
 ## Not implemented
 
-- Root-owned narrow administration helper.
-- Hermes image pinning and assistant container lifecycle.
-- Assistant provisioning commands.
 - Telegram, MCP, private Git, and coding-agent validation.
 - Encrypted non-Git backup and restore.
 - End-to-end tests on a clean VPS.

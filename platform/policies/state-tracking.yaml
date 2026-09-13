@@ -4,7 +4,7 @@ schema_version: 1
 tracked:
   files:
     - SOUL.md
-    - config.yaml
+    - assistant.yaml
     - projects.yaml
     - project.yaml
   directories:

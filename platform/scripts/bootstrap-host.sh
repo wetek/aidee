@@ -46,6 +46,8 @@ apt-get install -y \
   jq \
   openssl \
   python3 \
+  python3-jsonschema \
+  python3-yaml \
   ripgrep \
   rsync \
   sudo \

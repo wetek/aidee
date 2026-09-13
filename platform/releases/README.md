@@ -17,3 +17,5 @@ Each release will include:
 
 `v0.1.0-alpha.4` makes Telegram branding optional and adds unprivileged controller knowledge sync.
 
+`v0.1.0-alpha.5` adds the shared assistant image and narrow provisioning helper.
+

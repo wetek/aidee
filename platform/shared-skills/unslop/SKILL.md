@@ -15,6 +15,16 @@ Edit text to remove AI patterns.
 2. Rewrite. Preserve meaning, match intended tone.
 3. Self-audit: "What makes this obviously AI generated?" Fix remaining tells.
 
+## Aidee response budget
+
+For setup, controller, and assistant messages:
+
+1. Answer only the current question or action.
+2. Default to 120 words or fewer.
+3. Ask one question at a time.
+4. Do not repeat recorded facts unless they changed.
+5. Expand only when safety, a decision, or an error requires it.
+
 ## Patterns to detect and fix
 
 Rule numbers are stable ids that other skills cite. A removed rule leaves a gap.

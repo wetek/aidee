@@ -24,6 +24,8 @@ Apply this format to every Aidee setup message. Also apply the [unslop skill](..
 18. After failure, request only the error and the smallest useful output.
 19. Skip checks that do not apply to the selected provider or access method.
 20. Do not infer cloud firewall exposure from local listening ports.
+21. Default to 120 words or fewer.
+22. Expand only for safety, a required decision, or an error.
 
 ## Interview message
 

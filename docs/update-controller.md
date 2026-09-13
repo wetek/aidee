@@ -78,6 +78,21 @@ Start a new Hermes session after syncing so skill discovery reloads.
 
 If `~/.hermes/aidee-upstream/HOST_UPDATE_REQUIRED.md` exists, explain that the host remains on an older release. Do not invent an update command or request sudo access. Use the release's documented host update process when available.
 
+## Host update
+
+After a successful knowledge preview, the owner may separately approve a host update. The controller must not run it.
+
+Give the owner this command for their SSH terminal:
+
+~~~bash
+sudo "SOURCE_DIR/platform/scripts/update-host.sh" \
+  --release "RELEASE" \
+  --owner-name "OWNER_NAME" \
+  --approved
+~~~
+
+Replace `SOURCE_DIR`, `RELEASE`, and `OWNER_NAME` with the previewed values. The updater archives the previous source, activates the tagged release, installs the narrow administration helper, and builds and validates the shared assistant image.
+
 ## Report
 
 Report:
