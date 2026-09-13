@@ -273,12 +273,36 @@ def build_soul_document(assistant, owner):
                 "",
                 "## Software Engineering Standards",
                 "- Test-driven verification: enforce TDD and execute real tests (tsc, pytest, vitest) before completing tasks. Never finish without test evidence.",
-                "- Systematic debugging: follow 4-phase root-cause analysis (understand, reproduce, isolate, fix) before modifying code.",
-                "- Pre-commit code review: enforce quality gates, automated linting, type checks, and keep diffs atomic and minimal.",
-                "- Clean documentation: write structured commit messages, clear PR descriptions linking issues, and cited action items.",
+                "- Systematic debugging (`diagnosing-bugs`): follow 6-phase root-cause analysis (Reproduce -> Minimise -> Hypothesise -> Instrument -> Fix -> Regression-test) before modifying code.",
+                "- Requirements interrogation (`grill-me`, `grill-with-docs`, `grilling`, `to-spec`): interrogate requirements and edge cases before coding (`grill-me`, `grilling`), pair with documentation (`grill-with-docs`), and synthesize specifications into actionable specs with acceptance criteria (`to-spec`).",
+                "- Architecture & domain design (`codebase-design`, `domain-modeling`): build deep modules with small interfaces (`codebase-design`), maintain domain glossaries in CONTEXT.md and record ADRs (`domain-modeling`).",
+                "- Pre-commit code review (`code-review`): perform two-axis review (Standards + Spec fidelity), enforce quality gates, and keep diffs atomic.",
+                "- Clean documentation & handoff (`handoff`): preserve state and snapshots across turns, write structured commit messages, clear PR descriptions linking issues, and cited action items.",
             ]
         )
     return "\n".join(sections) + "\n"
+
+
+def sync_shared_skills(source_root, runtime_dir, uid, gid):
+    shared_skills_dir = source_root / "platform" / "shared-skills"
+    if not shared_skills_dir.is_dir():
+        return
+    skills_dir = runtime_dir / "skills"
+    ensure_directory(skills_dir, uid, gid, 0o770)
+    for item in sorted(shared_skills_dir.iterdir()):
+        if not item.is_dir() or item.name.startswith("."):
+            continue
+        if not (item / "SKILL.md").is_file():
+            continue
+        dest_dir = skills_dir / item.name
+        ensure_directory(dest_dir, uid, gid, 0o770)
+        for subpath in item.rglob("*"):
+            rel_path = subpath.relative_to(item)
+            dest_subpath = dest_dir / rel_path
+            if subpath.is_dir():
+                ensure_directory(dest_subpath, uid, gid, 0o770)
+            elif subpath.is_file():
+                write_text(dest_subpath, subpath.read_text(), uid, gid, 0o660)
 
 
 def create_assistant_state(assistant, image_id, dashboard_url):
@@ -298,7 +322,10 @@ def create_assistant_state(assistant, image_id, dashboard_url):
     ensure_directory(runtime_dir, CONTAINER_UID, controller_gid, 0o770)
     ensure_directory(runtime_dir / "skins", CONTAINER_UID, controller_gid, 0o770)
     ensure_directory(runtime_dir / "memories", CONTAINER_UID, controller_gid, 0o770)
+    ensure_directory(runtime_dir / "skills", CONTAINER_UID, controller_gid, 0o770)
     ensure_directory(secret_dir, 0, 0, 0o700)
+
+    sync_shared_skills(SOURCE_ROOT, runtime_dir, CONTAINER_UID, controller_gid)
 
     soul = build_soul_document(assistant, owner_name())
     write_text(

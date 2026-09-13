@@ -964,9 +964,45 @@ class AdminHelperTests(unittest.TestCase):
                 self.assertIn("interactive clarify tool with clickable options", content)
                 self.assertIn("Software Engineering Standards", content)
                 self.assertIn("Test-driven verification", content)
-                self.assertIn("Systematic debugging", content)
-                self.assertIn("Pre-commit code review", content)
-                self.assertIn("Clean documentation", content)
+                self.assertIn("Systematic debugging (`diagnosing-bugs`)", content)
+                self.assertIn(
+                    "Requirements interrogation (`grill-me`, `grill-with-docs`, `grilling`, `to-spec`)",
+                    content,
+                )
+                self.assertIn(
+                    "Architecture & domain design (`codebase-design`, `domain-modeling`)",
+                    content,
+                )
+                self.assertIn("Pre-commit code review (`code-review`)", content)
+                self.assertIn("Clean documentation & handoff (`handoff`)", content)
+
+                skills_dir = (
+                    state_root
+                    / "runtime"
+                    / "assistants"
+                    / f"test-{kind}"
+                    / "data"
+                    / "skills"
+                )
+                self.assertTrue(skills_dir.is_dir())
+                for skill_name in [
+                    "code-review",
+                    "codebase-design",
+                    "diagnosing-bugs",
+                    "domain-modeling",
+                    "grill-me",
+                    "grill-with-docs",
+                    "grilling",
+                    "handoff",
+                    "to-spec",
+                    "unslop",
+                ]:
+                    skill_file = skills_dir / skill_name / "SKILL.md"
+                    self.assertTrue(
+                        skill_file.is_file(),
+                        f"Expected skill file missing: {skill_file}",
+                    )
+                    self.assertGreater(len(skill_file.read_text()), 0)
 
 
 if __name__ == "__main__":
