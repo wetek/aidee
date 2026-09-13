@@ -36,8 +36,7 @@ Requires=docker.service
 [Service]
 Type=simple
 User=root
-Group=root
-ExecStartPre=/bin/chown root:${AIDEE_CONTROLLER_USER} /run/aidee
+Group=${AIDEE_CONTROLLER_USER}
 ExecStart=/usr/bin/python3 ${installed_script}
 Restart=on-failure
 RestartSec=5
