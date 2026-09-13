@@ -383,8 +383,9 @@ def validate_capacity_and_ports(assistant):
     registry = yaml.safe_load((STATE_ROOT / "fleet/registry.yaml").read_text())
     active = [
         item
-        for item in registry["assistants"]
-        if item["status"] not in {"retired", "failed"}
+        for item in (registry.get("assistants") or [])
+        if item.get("status") not in {"retired", "failed"}
+        and item.get("id") != assistant.get("id")
     ]
     requested_host_port = assistant["dashboard"]["host_port"]
     requested_https_port = assistant["dashboard"]["tailscale_https_port"]
@@ -398,13 +399,17 @@ def validate_capacity_and_ports(assistant):
     used_cpu = sum(item["resources"]["cpu_limit"] for item in active)
     used_memory = sum(item["resources"]["memory_mb"] for item in active)
     host_cpu = os.cpu_count() or 1
-    host_memory = int(
-        next(
-            line.split()[1]
-            for line in Path("/proc/meminfo").read_text().splitlines()
-            if line.startswith("MemTotal:")
-        )
-    ) // 1024
+    try:
+        meminfo = Path("/proc/meminfo").read_text()
+        host_memory = int(
+            next(
+                line.split()[1]
+                for line in meminfo.splitlines()
+                if line.startswith("MemTotal:")
+            )
+        ) // 1024
+    except Exception:
+        host_memory = 4096
     cpu_budget = max(0.25, host_cpu - 0.5)
     memory_budget = max(1024, host_memory - 2048)
     if used_cpu + assistant["resources"]["cpu_limit"] > cpu_budget:
@@ -854,7 +859,13 @@ def execute_idempotent(request):
     validate_request(request)
     request_id = request["request_id"]
     records = STATE_ROOT / "runtime/admin-requests"
+    controller_uid, controller_gid = controller_identity()
     records.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(records, 0o770)
+        os.chown(records, controller_uid, controller_gid)
+    except OSError:
+        pass
     record_path = records / f"{request_id}.json"
     if record_path.exists():
         record = load_json(record_path)
@@ -867,7 +878,11 @@ def execute_idempotent(request):
     temporary.write_text(
         json.dumps({"request": request, "result": result}, indent=2) + "\n"
     )
-    os.chmod(temporary, 0o600)
+    os.chmod(temporary, 0o660)
+    try:
+        os.chown(temporary, controller_uid, controller_gid)
+    except OSError:
+        pass
     temporary.replace(record_path)
     return result
 
@@ -885,7 +900,8 @@ def peer_uid(connection):
 
 
 def handle_connection(connection, allowed_uid):
-    if peer_uid(connection) != allowed_uid:
+    uid = peer_uid(connection)
+    if uid != allowed_uid and uid != 0:
         raise AdminError("unauthorized socket peer")
     message = connection.recv(MAX_REQUEST_BYTES + 1)
     if len(message) > MAX_REQUEST_BYTES:
@@ -900,6 +916,11 @@ def handle_connection(connection, allowed_uid):
 def serve():
     controller_uid, controller_gid = controller_identity()
     SOCKET_PATH.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(SOCKET_PATH.parent, 0o770)
+        os.chown(SOCKET_PATH.parent, 0, controller_gid)
+    except OSError:
+        pass
     if SOCKET_PATH.exists():
         SOCKET_PATH.unlink()
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as server:

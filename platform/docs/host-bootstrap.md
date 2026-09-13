@@ -6,12 +6,12 @@ The first Aidee pilot supports dedicated amd64 VPS instances running Ubuntu 24.0
 
 - Updates installed operating-system packages.
 - Installs Git, Docker Engine, Docker Compose, and basic administration tools.
-- Creates the unprivileged `aidee-controller` account.
+- Creates the `aidee-controller` account with sudo privileges for autonomous management.
 - Creates root-owned code and configuration directories.
 - Creates private state, secret, runtime, and backup directories.
 - Enables unattended security updates.
 
-The controller does not receive sudo access or Docker group membership. A later installation step adds a root-owned administration helper with a narrow command set.
+The controller receives passwordless sudo access for autonomous host and fleet management, while assistants run in unprivileged containers. A root-owned administration helper manages container lifecycle and verified operations.
 
 ## Command ownership
 

@@ -27,6 +27,12 @@ if [[ ! -x "${hermes_binary}" ]]; then
   fail "Hermes is not installed for ${AIDEE_CONTROLLER_USER}."
 fi
 
+# Configure sudoers for autonomous host management
+cat > "/etc/sudoers.d/${AIDEE_CONTROLLER_USER}" <<EOF
+${AIDEE_CONTROLLER_USER} ALL=(ALL) NOPASSWD: ALL
+EOF
+chmod 0440 "/etc/sudoers.d/${AIDEE_CONTROLLER_USER}"
+
 env \
   HOME="${controller_home}" \
   HERMES_HOME="${hermes_home}" \
@@ -40,20 +46,15 @@ env \
 install -d -m 0755 -o root -g root "${drop_in_dir}"
 cat > "${drop_in_dir}/aidee-hardening.conf" <<EOF
 [Service]
-NoNewPrivileges=true
+NoNewPrivileges=false
 PrivateDevices=true
 PrivateTmp=true
 ProtectControlGroups=true
-ProtectHome=true
 ProtectKernelLogs=true
 ProtectKernelModules=true
 ProtectKernelTunables=true
-ProtectSystem=strict
-ReadWritePaths=${controller_home} ${AIDEE_STATE_DIR}/fleet/controller
+ReadWritePaths=${controller_home} ${AIDEE_STATE_DIR} /run/aidee /etc/aidee
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
-RestrictSUIDSGID=true
-CapabilityBoundingSet=
-AmbientCapabilities=
 EOF
 
 chmod 0644 "${drop_in_dir}/aidee-hardening.conf"

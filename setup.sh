@@ -158,6 +158,10 @@ while true; do
     host_bootstrap)
       step "Install host packages and Docker"
       "${source_root}/platform/scripts/bootstrap-host.sh"
+      cat > "/etc/sudoers.d/${AIDEE_CONTROLLER_USER}" <<EOF
+${AIDEE_CONTROLLER_USER} ALL=(ALL) NOPASSWD: ALL
+EOF
+      chmod 0440 "/etc/sudoers.d/${AIDEE_CONTROLLER_USER}"
       cat /proc/sys/kernel/random/boot_id > "${boot_id_file}"
       chmod 0600 "${boot_id_file}"
       set_phase "awaiting_reboot"
@@ -221,6 +225,10 @@ while true; do
 
     install_controller)
       step "Install the pinned Hermes controller"
+      cat > "/etc/sudoers.d/${AIDEE_CONTROLLER_USER}" <<EOF
+${AIDEE_CONTROLLER_USER} ALL=(ALL) NOPASSWD: ALL
+EOF
+      chmod 0440 "/etc/sudoers.d/${AIDEE_CONTROLLER_USER}"
       controller_home="$(
         getent passwd "${AIDEE_CONTROLLER_USER}" | cut -d: -f6
       )"

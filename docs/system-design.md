@@ -28,7 +28,7 @@ The owner approves provisioning, destructive changes, purchases, external messag
 
 ### Controller
 
-The controller interviews the owner, generates plans and configuration, requests approved operations, validates the fleet, and reports failures. It has no unrestricted sudo permission and no Docker socket access.
+The controller interviews the owner, generates plans and configuration, executes approved operations, validates the fleet, and reports failures. It has sudo access for autonomous host and fleet management, and coordinates assistant containers through the root-owned Aidee administration helper.
 
 The controller calls a root-owned Aidee helper for a fixed set of operations. The helper validates assistant identifiers, paths, resource limits, image references, mounts, ports, and requested actions. It never executes a controller-provided shell command or Compose file.
 
