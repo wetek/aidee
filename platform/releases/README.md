@@ -23,4 +23,6 @@ Each release will include:
 
 `v0.1.0-alpha.7` adds dynamic assistant branding and proactive Telegram onboarding.
 
+`v0.1.0-alpha.8` adds autonomous controller sudo management, automated default cron provisioning, and 30-day session TTL defaults.
+
 
