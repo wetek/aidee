@@ -37,7 +37,7 @@ docker run \
   --rm \
   --read-only \
   --security-opt no-new-privileges:true \
-  --tmpfs /run:rw,nosuid,nodev,size=64m \
+  --tmpfs /run:rw,exec,nosuid,nodev,size=64m \
   --tmpfs /tmp:rw,nosuid,nodev,noexec,size=256m \
   "${image_id}" \
   sh -c '
@@ -71,7 +71,7 @@ for entry in "a:${container_a}" "b:${container_b}"; do
     --pids-limit 128 \
     --read-only \
     --security-opt no-new-privileges:true \
-    --tmpfs /run:rw,nosuid,nodev,size=64m \
+    --tmpfs /run:rw,exec,nosuid,nodev,size=64m \
     --tmpfs /tmp:rw,nosuid,nodev,noexec,size=64m \
     --volume "${data_dir}:/opt/data" \
     "${image_id}" \

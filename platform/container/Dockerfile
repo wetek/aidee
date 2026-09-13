@@ -14,7 +14,9 @@ RUN apt-get -o Acquire::Retries=3 update \
         socat \
     && rm -rf /var/lib/apt/lists/*
 
-RUN npm install --global "opencode-ai@${OPENCODE_VERSION}" \
+RUN npm install --global \
+      --allow-scripts=opencode-ai \
+      "opencode-ai@${OPENCODE_VERSION}" \
     && npm cache clean --force
 
 COPY platform/shared-skills/unslop/ /opt/hermes/skills/unslop/

@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+rebuild=false
+if [[ "${1:-}" == "--rebuild" ]]; then
+  rebuild=true
+  shift
+fi
+if (( $# > 0 )); then
+  echo "error: unknown argument: $1" >&2
+  exit 1
+fi
+
 if [[ "${EUID}" -ne 0 ]]; then
   echo "error: run with sudo on the Aidee host" >&2
   exit 1
@@ -28,7 +38,7 @@ fi
 
 expected_label="${version}"
 existing_id="$(docker image inspect "${tag}" --format '{{.Id}}' 2>/dev/null || true)"
-if [[ -n "${existing_id}" ]]; then
+if [[ -n "${existing_id}" && "${rebuild}" != true ]]; then
   actual_label="$(
     docker image inspect "${tag}" \
       --format '{{index .Config.Labels "org.opencontainers.image.version"}}'
