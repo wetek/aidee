@@ -63,16 +63,27 @@ Do not send Docker flags, host paths, image names, environment files, or shell c
 
 Return the private dashboard URL from the helper response.
 
-Tell the owner to open the controller dashboard Fleet page to reveal the initial password. Do not send the password or an SSH command.
+If controller dashboard credentials were inherited, inform the owner they can sign in to the assistant dashboard using their existing controller credentials. Otherwise, direct them to open the controller dashboard Fleet page to reveal the initial password. Never send passwords or SSH commands in chat.
 
 The owner creates third-party credentials and enters them through the assistant dashboard. Never request dashboard passwords or service tokens in Telegram.
 
-For Telegram:
+For Telegram and Bot Identity:
 
 1. Ask the owner to create a separate bot through BotFather.
 2. Ask them to enter the token in the assistant dashboard.
 3. Use DM pairing for owner access.
-4. Test one harmless response.
+4. Configure the Telegram Chat Menu Button (`setChatMenuButton`) pointing to the instance dashboard URL (`dashboard.public_url`).
+5. Respect Telegram platform limits: custom-port URLs (e.g. `:8444`) do not linkify in iOS bios; rely on the fixed Chat Menu Button and native Mini App card instead of raw URLs in bio text.
+6. When repositories are connected, inspect brand assets (`public/brand/*`) and proactively offer to set the Telegram bot profile photo.
+7. Test one harmless response.
+
+## Repository Access
+
+Default to least-privilege repository access:
+
+1. Avoid account-wide OAuth device authorization (`gh auth login`).
+2. Proactively generate and provide a dedicated SSH Deploy Key (write-enabled) scoped strictly to the target repository.
+3. Or request a fine-grained Personal Access Token (PAT) scoped exclusively to the specific repository with minimal permissions.
 
 ## Validate
 

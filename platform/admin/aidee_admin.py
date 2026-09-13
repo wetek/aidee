@@ -30,6 +30,7 @@ ASSISTANT_ID = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
 DASHBOARD_USERNAME = "aidee"
 DASHBOARD_USERNAME_KEY = "HERMES_DASHBOARD_BASIC_AUTH_USERNAME"
 DASHBOARD_PASSWORD_KEY = "HERMES_DASHBOARD_BASIC_AUTH_PASSWORD"
+DASHBOARD_PASSWORD_HASH_KEY = "HERMES_DASHBOARD_BASIC_AUTH_PASSWORD_HASH"
 DASHBOARD_SECRET_KEY = "HERMES_DASHBOARD_BASIC_AUTH_SECRET"
 DASHBOARD_USERNAME_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9._-]{0,63}$")
 
@@ -87,6 +88,47 @@ def write_text(path, text, uid, gid, mode=0o660):
     os.chmod(temporary, mode)
     os.chown(temporary, uid, gid)
     temporary.replace(path)
+
+
+def env_value(text, key):
+    prefix = f"{key}="
+    for line in text.splitlines():
+        if line.startswith(prefix):
+            return line[len(prefix) :]
+    return None
+
+
+def controller_dashboard_credentials():
+    candidates = []
+    override_env = os.environ.get("AIDEE_CONTROLLER_ENV")
+    if override_env:
+        candidates.append(Path(override_env))
+    override_home = os.environ.get("AIDEE_CONTROLLER_HOME")
+    if override_home:
+        candidates.append(Path(override_home) / ".hermes" / ".env")
+    candidates.append(STATE_ROOT / "controller-home" / ".hermes" / ".env")
+    candidates.append(STATE_ROOT / "controller" / ".env")
+
+    for candidate in candidates:
+        if candidate.is_file():
+            try:
+                content = candidate.read_text()
+            except OSError:
+                continue
+            username = env_value(content, DASHBOARD_USERNAME_KEY)
+            password = env_value(content, DASHBOARD_PASSWORD_KEY)
+            password_hash = env_value(content, DASHBOARD_PASSWORD_HASH_KEY)
+            secret = env_value(content, DASHBOARD_SECRET_KEY)
+            if username and (password or password_hash):
+                creds = {"username": username}
+                if password:
+                    creds["password"] = password
+                if password_hash:
+                    creds["password_hash"] = password_hash
+                if secret:
+                    creds["secret"] = secret
+                return creds
+    return None
 
 
 def image_record(version):
@@ -151,6 +193,7 @@ def create_assistant_state(assistant, image_id, dashboard_url):
         fleet_dir / "memories", controller_uid, controller_gid, 0o770
     )
     ensure_directory(runtime_dir, CONTAINER_UID, controller_gid, 0o770)
+    ensure_directory(runtime_dir / "skins", CONTAINER_UID, controller_gid, 0o770)
     ensure_directory(secret_dir, 0, 0, 0o700)
 
     soul = f"""# {assistant["name"]}
@@ -205,32 +248,89 @@ when safety, a decision, or an error requires it.
     write_text(
         runtime_dir / "config.yaml",
         yaml.safe_dump(
-            {"dashboard": {"public_url": dashboard_url}},
+            {
+                "dashboard": {"public_url": dashboard_url},
+                "display": {"skin": assistant_id},
+            },
             sort_keys=False,
         ),
         CONTAINER_UID,
         controller_gid,
     )
-    dashboard_password = secrets.token_urlsafe(24)
-    dashboard_session_secret = secrets.token_hex(32)
+    skin_content = {
+        "branding": {
+            "agent_name": assistant["name"],
+            "response_label": f" ⚕ {assistant['name']} ",
+        }
+    }
     write_text(
-        runtime_dir / ".env",
-        (
-            f"{DASHBOARD_USERNAME_KEY}={DASHBOARD_USERNAME}\n"
-            f"{DASHBOARD_PASSWORD_KEY}={dashboard_password}\n"
-            f"{DASHBOARD_SECRET_KEY}={dashboard_session_secret}\n"
-        ),
+        runtime_dir / "skins" / f"{assistant_id}.yaml",
+        yaml.safe_dump(skin_content, sort_keys=False),
         CONTAINER_UID,
         controller_gid,
-        0o600,
     )
-    write_text(
-        secret_dir / "dashboard-initial-password",
-        dashboard_password + "\n",
-        0,
-        0,
-        0o600,
-    )
+    inherited_creds = controller_dashboard_credentials()
+    if inherited_creds:
+        dashboard_username = inherited_creds.get("username") or DASHBOARD_USERNAME
+        dashboard_password = inherited_creds.get("password")
+        dashboard_password_hash = inherited_creds.get("password_hash")
+        dashboard_session_secret = (
+            inherited_creds.get("secret") or secrets.token_hex(32)
+        )
+        env_lines = [
+            f"{DASHBOARD_USERNAME_KEY}={dashboard_username}",
+        ]
+        if dashboard_password:
+            env_lines.append(f"{DASHBOARD_PASSWORD_KEY}={dashboard_password}")
+        if dashboard_password_hash:
+            env_lines.append(
+                f"{DASHBOARD_PASSWORD_HASH_KEY}={dashboard_password_hash}"
+            )
+        env_lines.append(f"{DASHBOARD_SECRET_KEY}={dashboard_session_secret}")
+        write_text(
+            runtime_dir / ".env",
+            "\n".join(env_lines) + "\n",
+            CONTAINER_UID,
+            controller_gid,
+            0o600,
+        )
+        if dashboard_password:
+            write_text(
+                secret_dir / "dashboard-initial-password",
+                dashboard_password + "\n",
+                0,
+                0,
+                0o600,
+            )
+        else:
+            write_text(
+                secret_dir / "dashboard-initial-password",
+                "inherited from controller dashboard\n",
+                0,
+                0,
+                0o600,
+            )
+    else:
+        dashboard_password = secrets.token_urlsafe(24)
+        dashboard_session_secret = secrets.token_hex(32)
+        write_text(
+            runtime_dir / ".env",
+            (
+                f"{DASHBOARD_USERNAME_KEY}={DASHBOARD_USERNAME}\n"
+                f"{DASHBOARD_PASSWORD_KEY}={dashboard_password}\n"
+                f"{DASHBOARD_SECRET_KEY}={dashboard_session_secret}\n"
+            ),
+            CONTAINER_UID,
+            controller_gid,
+            0o600,
+        )
+        write_text(
+            secret_dir / "dashboard-initial-password",
+            dashboard_password + "\n",
+            0,
+            0,
+            0o600,
+        )
 
     return fleet_dir, runtime_dir, secret_dir
 
@@ -477,6 +577,21 @@ def create_assistant(request):
         shutil.rmtree(runtime_dir.parent, ignore_errors=True)
         shutil.rmtree(secret_dir, ignore_errors=True)
         raise
+    inherited_creds = controller_dashboard_credentials()
+    if inherited_creds:
+        dashboard_username = inherited_creds.get("username") or DASHBOARD_USERNAME
+        next_action = (
+            "Open the assistant dashboard and sign in using your controller dashboard "
+            "credentials. Then configure model and messaging credentials in the "
+            "assistant dashboard."
+        )
+    else:
+        dashboard_username = DASHBOARD_USERNAME
+        next_action = (
+            "Open the controller dashboard Fleet page to reveal the initial "
+            "password. Then configure model and messaging credentials in the "
+            "assistant dashboard."
+        )
     return {
         "status": "provisioning",
         "assistant_id": assistant["id"],
@@ -484,16 +599,12 @@ def create_assistant(request):
         "proxy_container_name": proxy_name,
         "image_id": image_id,
         "dashboard_url": dashboard_url,
-        "dashboard_username": DASHBOARD_USERNAME,
+        "dashboard_username": dashboard_username,
         "dashboard_password_command": (
             "sudo /opt/aidee/source/platform/scripts/"
             f"show-assistant-dashboard-password.sh {assistant['id']}"
         ),
-        "next_action": (
-            "Open the controller dashboard Fleet page to reveal the initial "
-            "password. Then configure model and messaging credentials in the "
-            "assistant dashboard."
-        ),
+        "next_action": next_action,
     }
 
 
@@ -533,14 +644,6 @@ def registered_assistant(assistant_id):
         if item.get("id") == assistant_id:
             return item
     raise AdminError(f"assistant is not registered: {assistant_id}")
-
-
-def env_value(text, key):
-    prefix = f"{key}="
-    for line in text.splitlines():
-        if line.startswith(prefix):
-            return line[len(prefix) :]
-    return None
 
 
 def upsert_env(text, updates):
