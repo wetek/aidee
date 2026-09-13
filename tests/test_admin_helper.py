@@ -128,6 +128,7 @@ class AdminHelperTests(unittest.TestCase):
             )
             self.assertEqual(result["dashboard_username"], "aidee")
             self.assertNotIn("dashboard_password", result)
+            self.assertIn("Fleet page", result["next_action"])
             self.assertIn(
                 "show-assistant-dashboard-password.sh personal",
                 result["dashboard_password_command"],
@@ -163,6 +164,180 @@ class AdminHelperTests(unittest.TestCase):
                 registry["assistants"][0]["image"]["image_id"],
                 image_id,
             )
+
+    def test_upserts_env_values_without_dropping_other_keys(self):
+        updated = aidee_admin.upsert_env(
+            "KEEP=1\nHERMES_DASHBOARD_BASIC_AUTH_PASSWORD=old\n",
+            {"HERMES_DASHBOARD_BASIC_AUTH_PASSWORD": "new"},
+        )
+        self.assertIn("KEEP=1", updated)
+        self.assertIn("HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=new", updated)
+        self.assertNotIn("PASSWORD=old", updated)
+
+    def test_reveals_password_from_secret_file(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            state_root = Path(temporary_directory)
+            self.create_state(state_root)
+            registry = yaml.safe_load((state_root / "fleet" / "registry.yaml").read_text())
+            registry["assistants"].append(
+                {
+                    "id": "personal",
+                    "name": "Personal",
+                    "kind": "personal",
+                    "status": "provisioning",
+                    "dashboard": {"url": "https://pilot.example.ts.net:8443"},
+                }
+            )
+            (state_root / "fleet" / "registry.yaml").write_text(
+                yaml.safe_dump(registry, sort_keys=False)
+            )
+            secret_dir = state_root / "secrets" / "assistants" / "personal"
+            secret_dir.mkdir(parents=True)
+            (secret_dir / "dashboard-initial-password").write_text("secret-pass\n")
+
+            with mock.patch.object(aidee_admin, "STATE_ROOT", state_root):
+                result = aidee_admin.reveal_dashboard_password("personal")
+
+            self.assertEqual(result["dashboard_username"], "aidee")
+            self.assertEqual(result["dashboard_password"], "secret-pass")
+            self.assertEqual(
+                result["dashboard_url"],
+                "https://pilot.example.ts.net:8443",
+            )
+
+    def test_reset_updates_env_and_restarts(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            state_root = Path(temporary_directory)
+            self.create_state(state_root)
+            registry = yaml.safe_load((state_root / "fleet" / "registry.yaml").read_text())
+            registry["assistants"].append(
+                {
+                    "id": "personal",
+                    "name": "Personal",
+                    "kind": "personal",
+                    "status": "running",
+                    "dashboard": {"url": "https://pilot.example.ts.net:8443"},
+                }
+            )
+            (state_root / "fleet" / "registry.yaml").write_text(
+                yaml.safe_dump(registry, sort_keys=False)
+            )
+            runtime_dir = state_root / "runtime" / "assistants" / "personal" / "data"
+            runtime_dir.mkdir(parents=True)
+            (runtime_dir / ".env").write_text(
+                "MODEL=keep\nHERMES_DASHBOARD_BASIC_AUTH_PASSWORD=old\n"
+            )
+            commands = []
+
+            def fake_run(command):
+                commands.append(command)
+                return ""
+
+            def fake_directory(path, uid, gid, mode):
+                path.mkdir(parents=True, exist_ok=True)
+                path.chmod(mode)
+
+            with (
+                mock.patch.object(aidee_admin, "STATE_ROOT", state_root),
+                mock.patch.object(
+                    aidee_admin,
+                    "controller_identity",
+                    return_value=(os.getuid(), os.getgid()),
+                ),
+                mock.patch.object(aidee_admin, "run", side_effect=fake_run),
+                mock.patch.object(aidee_admin.os, "chown"),
+                mock.patch.object(
+                    aidee_admin,
+                    "ensure_directory",
+                    side_effect=fake_directory,
+                ),
+            ):
+                result = aidee_admin.reset_dashboard_password("personal")
+
+            env_text = (runtime_dir / ".env").read_text()
+            self.assertIn("MODEL=keep", env_text)
+            self.assertIn(
+                f"HERMES_DASHBOARD_BASIC_AUTH_PASSWORD={result['dashboard_password']}",
+                env_text,
+            )
+            self.assertNotEqual(result["dashboard_password"], "old")
+            self.assertTrue(
+                (
+                    state_root
+                    / "secrets"
+                    / "assistants"
+                    / "personal"
+                    / "dashboard-initial-password"
+                ).is_file()
+            )
+            self.assertIn(["docker", "restart", "aidee-personal"], commands)
+            self.assertIn(
+                ["docker", "restart", "aidee-personal-dashboard-proxy"],
+                commands,
+            )
+
+    def test_sets_manual_username_and_password(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            state_root = Path(temporary_directory)
+            self.create_state(state_root)
+            registry = yaml.safe_load((state_root / "fleet" / "registry.yaml").read_text())
+            registry["assistants"].append(
+                {
+                    "id": "personal",
+                    "name": "Personal",
+                    "kind": "personal",
+                    "status": "running",
+                    "dashboard": {"url": "https://pilot.example.ts.net:8443"},
+                }
+            )
+            (state_root / "fleet" / "registry.yaml").write_text(
+                yaml.safe_dump(registry, sort_keys=False)
+            )
+            runtime_dir = state_root / "runtime" / "assistants" / "personal" / "data"
+            runtime_dir.mkdir(parents=True)
+            (runtime_dir / ".env").write_text(
+                "MODEL=keep\nHERMES_DASHBOARD_BASIC_AUTH_USERNAME=aidee\n"
+                "HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=oldpass1\n"
+            )
+            commands = []
+
+            def fake_run(command):
+                commands.append(command)
+                return ""
+
+            def fake_directory(path, uid, gid, mode):
+                path.mkdir(parents=True, exist_ok=True)
+                path.chmod(mode)
+
+            request = {
+                "assistant_id": "personal",
+                "dashboard_username": "owner",
+                "dashboard_password": "manual-pass",
+            }
+            with (
+                mock.patch.object(aidee_admin, "STATE_ROOT", state_root),
+                mock.patch.object(
+                    aidee_admin,
+                    "controller_identity",
+                    return_value=(os.getuid(), os.getgid()),
+                ),
+                mock.patch.object(aidee_admin, "run", side_effect=fake_run),
+                mock.patch.object(aidee_admin.os, "chown"),
+                mock.patch.object(
+                    aidee_admin,
+                    "ensure_directory",
+                    side_effect=fake_directory,
+                ),
+            ):
+                result = aidee_admin.set_dashboard_credentials(request)
+
+            env_text = (runtime_dir / ".env").read_text()
+            self.assertIn("MODEL=keep", env_text)
+            self.assertIn("HERMES_DASHBOARD_BASIC_AUTH_USERNAME=owner", env_text)
+            self.assertIn("HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=manual-pass", env_text)
+            self.assertEqual(result["dashboard_username"], "owner")
+            self.assertEqual(result["dashboard_password"], "manual-pass")
+            self.assertIn(["docker", "restart", "aidee-personal"], commands)
 
     def test_rejects_unapproved_request(self):
         request = json.loads(

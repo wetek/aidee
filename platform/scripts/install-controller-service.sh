@@ -54,7 +54,7 @@ ProtectKernelLogs=true
 ProtectKernelModules=true
 ProtectKernelTunables=true
 ProtectSystem=strict
-ReadWritePaths=${controller_home} ${AIDEE_STATE_DIR}/fleet/controller
+ReadWritePaths=${controller_home} ${AIDEE_STATE_DIR}/fleet/controller /run/aidee
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 RestrictSUIDSGID=true
 
@@ -64,7 +64,8 @@ EOF
 
 chmod 0644 "${service_path}"
 systemctl daemon-reload
-systemctl enable --now "${service_name}"
+systemctl enable "${service_name}"
+systemctl restart "${service_name}"
 
 if ! systemctl is-active --quiet "${service_name}"; then
   systemctl status "${service_name}" --no-pager >&2 || true

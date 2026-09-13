@@ -101,6 +101,8 @@ for skill_source in "${script_dir}"/../shared-skills/*; do
     ln -sfn "${skill_source}" "${hermes_home}/skills/${skill}"
 done
 
+"${script_dir}/install-dashboard-plugins.sh"
+
 runuser -u "${AIDEE_CONTROLLER_USER}" -- \
   env HOME="${controller_home}" \
   "${hermes_binary}" --version

@@ -133,6 +133,16 @@ for skill_source in "${target}"/platform/shared-skills/*; do
   ln -sfn "${skill_source}" "${destination}"
 done
 
+plugin_source="${target}/platform/dashboard-plugins/aidee-fleet"
+plugin_destination="${HERMES_HOME}/plugins/aidee-fleet"
+if [[ -f "${plugin_source}/dashboard/manifest.json" ]]; then
+  install -d -m 0750 "${HERMES_HOME}/plugins"
+  if [[ -e "${plugin_destination}" && ! -L "${plugin_destination}" ]]; then
+    fail "Refusing to replace non-symlink plugin: ${plugin_destination}"
+  fi
+  ln -sfn "${plugin_source}" "${plugin_destination}"
+fi
+
 ln -sfn "releases/${release}" "${upstream_dir}/current"
 printf '%s\n' "${release}" > "${upstream_dir}/SYNCED_RELEASE"
 chmod 0640 "${upstream_dir}/SYNCED_RELEASE"

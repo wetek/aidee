@@ -27,6 +27,11 @@ CONTROLLER_USER = os.environ.get("AIDEE_CONTROLLER_USER", "aidee-controller")
 CONTAINER_UID = 10000
 MAX_REQUEST_BYTES = 65536
 ASSISTANT_ID = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
+DASHBOARD_USERNAME = "aidee"
+DASHBOARD_USERNAME_KEY = "HERMES_DASHBOARD_BASIC_AUTH_USERNAME"
+DASHBOARD_PASSWORD_KEY = "HERMES_DASHBOARD_BASIC_AUTH_PASSWORD"
+DASHBOARD_SECRET_KEY = "HERMES_DASHBOARD_BASIC_AUTH_SECRET"
+DASHBOARD_USERNAME_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9._-]{0,63}$")
 
 
 class AdminError(RuntimeError):
@@ -211,9 +216,9 @@ when safety, a decision, or an error requires it.
     write_text(
         runtime_dir / ".env",
         (
-            "HERMES_DASHBOARD_BASIC_AUTH_USERNAME=aidee\n"
-            f"HERMES_DASHBOARD_BASIC_AUTH_PASSWORD={dashboard_password}\n"
-            f"HERMES_DASHBOARD_BASIC_AUTH_SECRET={dashboard_session_secret}\n"
+            f"{DASHBOARD_USERNAME_KEY}={DASHBOARD_USERNAME}\n"
+            f"{DASHBOARD_PASSWORD_KEY}={dashboard_password}\n"
+            f"{DASHBOARD_SECRET_KEY}={dashboard_session_secret}\n"
         ),
         CONTAINER_UID,
         controller_gid,
@@ -479,14 +484,15 @@ def create_assistant(request):
         "proxy_container_name": proxy_name,
         "image_id": image_id,
         "dashboard_url": dashboard_url,
-        "dashboard_username": "aidee",
+        "dashboard_username": DASHBOARD_USERNAME,
         "dashboard_password_command": (
             "sudo /opt/aidee/source/platform/scripts/"
             f"show-assistant-dashboard-password.sh {assistant['id']}"
         ),
         "next_action": (
-            "Retrieve the initial dashboard password in SSH, then configure "
-            "model and messaging credentials in the private dashboard."
+            "Open the controller dashboard Fleet page to reveal the initial "
+            "password. Then configure model and messaging credentials in the "
+            "assistant dashboard."
         ),
     }
 
@@ -512,6 +518,211 @@ def lifecycle(operation, assistant_id):
     }
 
 
+def assistant_runtime_dir(assistant_id):
+    return STATE_ROOT / f"runtime/assistants/{assistant_id}/data"
+
+
+def assistant_secret_dir(assistant_id):
+    return STATE_ROOT / f"secrets/assistants/{assistant_id}"
+
+
+def registered_assistant(assistant_id):
+    assistant_id = safe_assistant_id(assistant_id)
+    registry = yaml.safe_load((STATE_ROOT / "fleet/registry.yaml").read_text())
+    for item in registry.get("assistants") or []:
+        if item.get("id") == assistant_id:
+            return item
+    raise AdminError(f"assistant is not registered: {assistant_id}")
+
+
+def env_value(text, key):
+    prefix = f"{key}="
+    for line in text.splitlines():
+        if line.startswith(prefix):
+            return line[len(prefix) :]
+    return None
+
+
+def upsert_env(text, updates):
+    seen = set()
+    lines = []
+    for line in text.splitlines():
+        replaced = False
+        for key, value in updates.items():
+            if line.startswith(f"{key}="):
+                lines.append(f"{key}={value}")
+                seen.add(key)
+                replaced = True
+                break
+        if not replaced:
+            lines.append(line)
+    for key, value in updates.items():
+        if key not in seen:
+            lines.append(f"{key}={value}")
+    return "\n".join(lines) + "\n"
+
+
+def dashboard_password_file(assistant_id):
+    return assistant_secret_dir(assistant_id) / "dashboard-initial-password"
+
+
+def read_dashboard_password(assistant_id):
+    password_file = dashboard_password_file(assistant_id)
+    if password_file.is_file():
+        password = password_file.read_text().strip()
+        if password:
+            return password
+    env_file = assistant_runtime_dir(assistant_id) / ".env"
+    if env_file.is_file():
+        password = env_value(env_file.read_text(), DASHBOARD_PASSWORD_KEY)
+        if password:
+            return password
+    raise AdminError(
+        "dashboard password is missing; reset it from the Fleet page"
+    )
+
+
+def safe_dashboard_username(username):
+    if not isinstance(username, str) or not DASHBOARD_USERNAME_PATTERN.fullmatch(
+        username
+    ):
+        raise AdminError("invalid dashboard username")
+    return username
+
+
+def safe_dashboard_password(password):
+    if (
+        not isinstance(password, str)
+        or len(password) < 8
+        or len(password) > 128
+        or "\n" in password
+        or "\r" in password
+    ):
+        raise AdminError("invalid dashboard password")
+    return password
+
+
+def read_dashboard_username(assistant_id):
+    env_file = assistant_runtime_dir(assistant_id) / ".env"
+    if env_file.is_file():
+        username = env_value(env_file.read_text(), DASHBOARD_USERNAME_KEY)
+        if username:
+            return username
+    return DASHBOARD_USERNAME
+
+
+def write_dashboard_password(assistant_id, password, session_secret=None, username=None):
+    controller_uid, controller_gid = controller_identity()
+    runtime_dir = assistant_runtime_dir(assistant_id)
+    secret_dir = assistant_secret_dir(assistant_id)
+    env_file = runtime_dir / ".env"
+    ensure_directory(runtime_dir, CONTAINER_UID, controller_gid, 0o770)
+    ensure_directory(secret_dir, 0, 0, 0o700)
+    current = env_file.read_text() if env_file.is_file() else ""
+    updates = {
+        DASHBOARD_USERNAME_KEY: username or read_dashboard_username(assistant_id),
+        DASHBOARD_PASSWORD_KEY: password,
+    }
+    if session_secret is not None:
+        updates[DASHBOARD_SECRET_KEY] = session_secret
+    elif env_value(current, DASHBOARD_SECRET_KEY) is None:
+        updates[DASHBOARD_SECRET_KEY] = secrets.token_hex(32)
+    write_text(
+        env_file,
+        upsert_env(current, updates),
+        CONTAINER_UID,
+        controller_gid,
+        0o600,
+    )
+    write_text(
+        dashboard_password_file(assistant_id),
+        password + "\n",
+        0,
+        0,
+        0o600,
+    )
+
+
+def restart_assistant_containers(assistant_id):
+    container_name = f"aidee-{assistant_id}"
+    proxy_name = f"{container_name}-dashboard-proxy"
+    run(["docker", "restart", container_name])
+    run(["docker", "restart", proxy_name])
+
+
+def list_assistants():
+    registry = yaml.safe_load((STATE_ROOT / "fleet/registry.yaml").read_text())
+    assistants = []
+    for item in registry.get("assistants") or []:
+        assistant_id = item.get("id")
+        if not isinstance(assistant_id, str):
+            continue
+        dashboard = item.get("dashboard") or {}
+        entry = {
+            "id": assistant_id,
+            "name": item.get("name") or assistant_id,
+            "kind": item.get("kind"),
+            "registry_status": item.get("status"),
+            "dashboard_url": dashboard.get("url"),
+            "dashboard_username": read_dashboard_username(assistant_id),
+            "running": False,
+            "status": "missing",
+        }
+        try:
+            live = lifecycle("status_assistant", assistant_id)
+            entry["running"] = live["running"]
+            entry["status"] = live["status"]
+        except AdminError:
+            pass
+        assistants.append(entry)
+    return {"assistants": assistants}
+
+
+def reveal_dashboard_password(assistant_id):
+    item = registered_assistant(assistant_id)
+    dashboard = item.get("dashboard") or {}
+    return {
+        "assistant_id": assistant_id,
+        "dashboard_username": read_dashboard_username(assistant_id),
+        "dashboard_password": read_dashboard_password(assistant_id),
+        "dashboard_url": dashboard.get("url"),
+    }
+
+
+def reset_dashboard_password(assistant_id):
+    registered_assistant(assistant_id)
+    password = secrets.token_urlsafe(24)
+    write_dashboard_password(assistant_id, password)
+    restart_assistant_containers(assistant_id)
+    item = registered_assistant(assistant_id)
+    dashboard = item.get("dashboard") or {}
+    return {
+        "assistant_id": assistant_id,
+        "dashboard_username": read_dashboard_username(assistant_id),
+        "dashboard_password": password,
+        "dashboard_url": dashboard.get("url"),
+        "restarted": True,
+    }
+
+
+def set_dashboard_credentials(request):
+    assistant_id = safe_assistant_id(request["assistant_id"])
+    registered_assistant(assistant_id)
+    username = safe_dashboard_username(request["dashboard_username"])
+    password = safe_dashboard_password(request["dashboard_password"])
+    write_dashboard_password(assistant_id, password, username=username)
+    restart_assistant_containers(assistant_id)
+    item = registered_assistant(assistant_id)
+    dashboard = item.get("dashboard") or {}
+    return {
+        "assistant_id": assistant_id,
+        "dashboard_username": username,
+        "dashboard_password": password,
+        "dashboard_url": dashboard.get("url"),
+        "restarted": True,
+    }
+
+
 def execute(request):
     validate_request(request)
     operation = request["operation"]
@@ -519,6 +730,14 @@ def execute(request):
         return build_image()
     if operation == "create_assistant":
         return create_assistant(request)
+    if operation == "list_assistants":
+        return list_assistants()
+    if operation == "reveal_dashboard_password":
+        return reveal_dashboard_password(request["assistant_id"])
+    if operation == "reset_dashboard_password":
+        return reset_dashboard_password(request["assistant_id"])
+    if operation == "set_dashboard_credentials":
+        return set_dashboard_credentials(request)
     if operation in {
         "start_assistant",
         "stop_assistant",

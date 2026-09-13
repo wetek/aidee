@@ -1,0 +1,13 @@
+{
+  "name": "aidee-fleet",
+  "label": "Fleet",
+  "description": "Reveal and reset assistant dashboard passwords.",
+  "icon": "KeyRound",
+  "version": "0.1.0",
+  "tab": {
+    "path": "/fleet",
+    "position": "before:sessions"
+  },
+  "entry": "dist/index.js",
+  "api": "plugin_api.py"
+}

@@ -11,6 +11,12 @@
     },
     {
       "$ref": "#/$defs/lifecycle"
+    },
+    {
+      "$ref": "#/$defs/listAssistants"
+    },
+    {
+      "$ref": "#/$defs/setCredentials"
     }
   ],
   "$defs": {
@@ -118,7 +124,9 @@
               "enum": [
                 "start_assistant",
                 "stop_assistant",
-                "status_assistant"
+                "status_assistant",
+                "reveal_dashboard_password",
+                "reset_dashboard_password"
               ]
             },
             "assistant_id": {
@@ -132,6 +140,85 @@
             "owner_approved",
             "operation",
             "assistant_id"
+          ]
+        }
+      ]
+    },
+    "listAssistants": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "schema_version": {
+              "const": 1
+            },
+            "request_id": {
+              "type": "string"
+            },
+            "owner_approved": {
+              "const": true
+            },
+            "operation": {
+              "const": "list_assistants"
+            }
+          },
+          "required": [
+            "schema_version",
+            "request_id",
+            "owner_approved",
+            "operation"
+          ]
+        }
+      ]
+    },
+    "setCredentials": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "schema_version": {
+              "const": 1
+            },
+            "request_id": {
+              "type": "string"
+            },
+            "owner_approved": {
+              "const": true
+            },
+            "operation": {
+              "const": "set_dashboard_credentials"
+            },
+            "assistant_id": {
+              "type": "string",
+              "pattern": "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$"
+            },
+            "dashboard_username": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9._-]{0,63}$"
+            },
+            "dashboard_password": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128,
+              "pattern": "^[^\\r\\n]+$"
+            }
+          },
+          "required": [
+            "schema_version",
+            "request_id",
+            "owner_approved",
+            "operation",
+            "assistant_id",
+            "dashboard_username",
+            "dashboard_password"
           ]
         }
       ]
