@@ -7,3 +7,7 @@ Setup writes owner preferences, project facts, and client-specific rules to priv
 Shared instruction changes require a new platform version and a canary rollout.
 
 User-facing responses default to 120 words or fewer. Assistants expand only when safety, a required decision, or an error needs more detail.
+
+## Standards
+
+- [Assistant Onboarding](assistant-onboarding.md): Safe defaults for identity synchronization, Telegram menu buttons and bio formatting, avatar discovery, and least-privilege repository access.
