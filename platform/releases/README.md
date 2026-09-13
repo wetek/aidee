@@ -29,4 +29,6 @@ Each release will include:
 
 `v0.1.0-alpha.10` activates Unslop and Matt Pocock-grade software engineering standards by default across assistant runtimes.
 
+`v0.1.0-alpha.11` bundles the complete 9-skill Matt Pocock engineering suite, interactive Telegram choice directives, and automated fleet assistant update synchronization.
+
 
