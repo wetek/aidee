@@ -10,13 +10,18 @@ Reusable Hermes skills that every assistant may receive.
 
 `controller-feedback/SKILL.md` offers to draft a public GitHub issue when the owner hits a bug, feature request, docs gap, or insight. The owner reviews and submits it. Nothing is shared unless they ask.
 
-Initial skill targets:
+`provision-assistant/SKILL.md` creates and validates isolated Aidee assistants through the narrow administration helper.
 
-- Investigate an incident before proposing implementation.
-- Write a task brief with evidence and acceptance criteria.
-- Delegate implementation to the configured coding agent.
-- Validate tests, branch, pull request, and trace links.
-- Report decisions and failures clearly.
+## Matt Pocock engineering workflows
 
-Skills will be implemented and tested with the shared container image.
+Bundled engineering discipline skills installed for coding and project assistants:
 
+- `code-review/SKILL.md`: Two-axis diff review (Standards compliance + Spec fidelity) via parallel sub-agents.
+- `codebase-design/SKILL.md`: Deep modules, small interfaces, clean seams, and boundary testability.
+- `diagnosing-bugs/SKILL.md`: 6-step root-cause diagnosis loop (Reproduce -> Minimise -> Hypothesise -> Instrument -> Fix -> Regression-test).
+- `domain-modeling/SKILL.md`: Ubiquitous domain language, glossary in `CONTEXT.md`, and ADR recording.
+- `grill-me/SKILL.md`: Relentless requirements interrogation and edge-case probing before coding.
+- `grill-with-docs/SKILL.md`: Requirements interrogation paired with inline `CONTEXT.md` and ADR creation.
+- `grilling/SKILL.md`: Core tree-structured interview protocol and decision frontier exploration.
+- `handoff/SKILL.md`: State preservation, task snapshots, and context handoff between turns and sessions.
+- `to-spec/SKILL.md`: Synthesizing conversations into structured technical specifications with acceptance criteria.

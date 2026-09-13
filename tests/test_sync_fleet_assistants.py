@@ -211,9 +211,40 @@ class SyncFleetAssistantsTests(unittest.TestCase):
         self.assertIn("Interactive Telegram Choices", c_fleet_soul)
         self.assertIn("Software Engineering Standards", c_fleet_soul)
         self.assertIn("Test-driven verification", c_fleet_soul)
-        self.assertIn("Systematic debugging", c_fleet_soul)
-        self.assertIn("Pre-commit code review", c_fleet_soul)
-        self.assertIn("Clean documentation", c_fleet_soul)
+        self.assertIn("Systematic debugging (`diagnosing-bugs`)", c_fleet_soul)
+        self.assertIn(
+            "Requirements interrogation (`grill-me`, `grill-with-docs`, `grilling`, `to-spec`)",
+            c_fleet_soul,
+        )
+        self.assertIn(
+            "Architecture & domain design (`codebase-design`, `domain-modeling`)",
+            c_fleet_soul,
+        )
+        self.assertIn("Pre-commit code review (`code-review`)", c_fleet_soul)
+        self.assertIn("Clean documentation & handoff (`handoff`)", c_fleet_soul)
+
+        # Verify shared skills copied to runtime
+        for r_dir in (personal_runtime, coding_runtime):
+            skills_dir = r_dir / "skills"
+            self.assertTrue(skills_dir.is_dir())
+            for skill_name in [
+                "code-review",
+                "codebase-design",
+                "diagnosing-bugs",
+                "domain-modeling",
+                "grill-me",
+                "grill-with-docs",
+                "grilling",
+                "handoff",
+                "to-spec",
+                "unslop",
+            ]:
+                skill_file = skills_dir / skill_name / "SKILL.md"
+                self.assertTrue(
+                    skill_file.is_file(),
+                    f"Missing skill file: {skill_file}",
+                )
+                self.assertGreater(len(skill_file.read_text()), 0)
 
 
 if __name__ == "__main__":

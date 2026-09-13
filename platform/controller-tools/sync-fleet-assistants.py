@@ -35,9 +35,11 @@ def build_soul_document(name: str, owner: str, purpose: str, kind: str) -> str:
                 "",
                 "## Software Engineering Standards",
                 "- Test-driven verification: enforce TDD and execute real tests (tsc, pytest, vitest) before completing tasks. Never finish without test evidence.",
-                "- Systematic debugging: follow 4-phase root-cause analysis (understand, reproduce, isolate, fix) before modifying code.",
-                "- Pre-commit code review: enforce quality gates, automated linting, type checks, and keep diffs atomic and minimal.",
-                "- Clean documentation: write structured commit messages, clear PR descriptions linking issues, and cited action items.",
+                "- Systematic debugging (`diagnosing-bugs`): follow 6-phase root-cause analysis (Reproduce -> Minimise -> Hypothesise -> Instrument -> Fix -> Regression-test) before modifying code.",
+                "- Requirements interrogation (`grill-me`, `grill-with-docs`, `grilling`, `to-spec`): interrogate requirements and edge cases before coding (`grill-me`, `grilling`), pair with documentation (`grill-with-docs`), and synthesize specifications into actionable specs with acceptance criteria (`to-spec`).",
+                "- Architecture & domain design (`codebase-design`, `domain-modeling`): build deep modules with small interfaces (`codebase-design`), maintain domain glossaries in CONTEXT.md and record ADRs (`domain-modeling`).",
+                "- Pre-commit code review (`code-review`): perform two-axis review (Standards + Spec fidelity), enforce quality gates, and keep diffs atomic.",
+                "- Clean documentation & handoff (`handoff`): preserve state and snapshots across turns, write structured commit messages, clear PR descriptions linking issues, and cited action items.",
             ]
         )
     return "\n".join(sections) + "\n"
@@ -94,13 +96,78 @@ def write_file(path: Path, content: str, mode: int = 0o660, uid: int | None = No
             pass
 
 
+def sync_shared_skills(
+    source_root: Path, runtime_dir: Path, dry_run: bool = False
+) -> list[str]:
+    shared_skills_dir = source_root / "platform" / "shared-skills"
+    if not shared_skills_dir.is_dir():
+        return []
+    synced_skills = []
+    target_skills_dir = runtime_dir / "skills"
+    for item in sorted(shared_skills_dir.iterdir()):
+        if not item.is_dir() or item.name.startswith("."):
+            continue
+        skill_file = item / "SKILL.md"
+        if not skill_file.is_file():
+            continue
+        synced_skills.append(item.name)
+        if not dry_run:
+            dest_dir = target_skills_dir / item.name
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            try:
+                os.chmod(dest_dir, 0o770)
+            except OSError:
+                pass
+            try:
+                os.chown(dest_dir, CONTAINER_UID, -1)
+            except OSError:
+                pass
+            for subpath in item.rglob("*"):
+                rel_path = subpath.relative_to(item)
+                dest_subpath = dest_dir / rel_path
+                if subpath.is_dir():
+                    dest_subpath.mkdir(parents=True, exist_ok=True)
+                    try:
+                        os.chmod(dest_subpath, 0o770)
+                    except OSError:
+                        pass
+                    try:
+                        os.chown(dest_subpath, CONTAINER_UID, -1)
+                    except OSError:
+                        pass
+                elif subpath.is_file():
+                    write_file(
+                        dest_subpath,
+                        subpath.read_text(),
+                        mode=0o660,
+                        uid=CONTAINER_UID,
+                    )
+    if not dry_run and synced_skills:
+        try:
+            os.chmod(target_skills_dir, 0o770)
+        except OSError:
+            pass
+        try:
+            os.chown(target_skills_dir, CONTAINER_UID, -1)
+        except OSError:
+            pass
+    return synced_skills
+
+
 def sync_fleet_assistants(
     state_root: Path,
     registry_path: Path,
     owner_record_path: Path,
     owner_name_override: str | None,
     dry_run: bool,
+    source_root: Path | None = None,
 ) -> int:
+    if source_root is None:
+        source_root = Path(
+            os.environ.get(
+                "AIDEE_SOURCE_ROOT", str(Path(__file__).resolve().parents[2])
+            )
+        )
     if not registry_path.is_file():
         print(f"Fleet registry not found: {registry_path}", file=sys.stderr)
         return 0
@@ -170,6 +237,12 @@ def sync_fleet_assistants(
                 f"[dry-run] Would update SOUL.md for assistant '{assistant_id}' "
                 f"(fleet: {fleet_soul}, runtime: {runtime_soul})"
             )
+            skills = sync_shared_skills(source_root, runtime_dir, dry_run=True)
+            if skills:
+                print(
+                    f"[dry-run] Would sync {len(skills)} shared skill(s) for '{assistant_id}': "
+                    f"{', '.join(skills)}"
+                )
         else:
             if fleet_dir.is_dir():
                 write_file(fleet_soul, soul_content, mode=0o660)
@@ -180,6 +253,11 @@ def sync_fleet_assistants(
                     mode=0o660,
                     uid=CONTAINER_UID,
                 )
+                skills = sync_shared_skills(source_root, runtime_dir, dry_run=False)
+                if skills:
+                    print(
+                        f"Synced {len(skills)} shared skill(s) for '{assistant_id}'"
+                    )
             print(f"Updated SOUL.md for assistant '{assistant_id}'")
 
         synced_count += 1
@@ -229,6 +307,12 @@ def main():
         default=None,
         help="Override owner name for generated SOUL documents.",
     )
+    parser.add_argument(
+        "--source-root",
+        type=Path,
+        default=None,
+        help="Path to Aidee source root directory (defaults to $AIDEE_SOURCE_ROOT).",
+    )
 
     arguments = parser.parse_args()
 
@@ -253,6 +337,7 @@ def main():
         owner_record_path=owner_record_path,
         owner_name_override=arguments.owner_name,
         dry_run=arguments.dry_run,
+        source_root=arguments.source_root,
     )
 
 
