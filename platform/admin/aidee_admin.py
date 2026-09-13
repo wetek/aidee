@@ -71,15 +71,15 @@ def safe_assistant_id(assistant_id):
 
 def ensure_directory(path, uid, gid, mode):
     path.mkdir(parents=True, exist_ok=True)
-    os.chown(path, uid, gid)
     os.chmod(path, mode)
+    os.chown(path, uid, gid)
 
 
 def write_text(path, text, uid, gid, mode=0o660):
     temporary = path.with_suffix(path.suffix + ".tmp")
     temporary.write_text(text)
-    os.chown(temporary, uid, gid)
     os.chmod(temporary, mode)
+    os.chown(temporary, uid, gid)
     temporary.replace(path)
 
 
