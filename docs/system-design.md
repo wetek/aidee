@@ -148,9 +148,10 @@ and coding-tool setup. Personal and client assistants may skip those steps with
 a recorded reason. Atomic file replacement under `fcntl` locking prevents two
 concurrent Telegram turns from both producing an offer.
 
-The daily update job performs preview-only discovery. It stays silent when no
-update exists and gives the owner the documented SSH preview command for a new
-release. It never applies an update or modifies root-owned host files.
+The daily update job stays silent when no update exists. When a newer release
+exists, it sends a Telegram notice with Start update. It does not apply until
+the owner confirms in Telegram. After Start update it runs preview, then apply
+after Apply now.
 
 ## Assistant provisioning
 

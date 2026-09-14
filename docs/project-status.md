@@ -1,7 +1,7 @@
 # Aidee project status
 
 Status: first VPS pilot in progress
-Release: `v0.1.0-alpha.18`
+Release: `v0.1.0-alpha.19`
 
 ## Goal
 
@@ -26,7 +26,8 @@ Prove that an owner can use the Aidee setup guide to install a private fleet of 
 - Telegram owner and phone dashboard completion markers.
 - Evidence-gated completed or owner-confirmed skipped step states.
 - Unprivileged controller knowledge preview and sync.
-- Owner-approved daily update discovery through Hermes cron.
+- Owner-approved daily update discovery through Hermes cron, with Telegram
+  start and apply after explicit taps.
 - Provider-neutral recovery and migration contracts.
 - Chatbot-guided setup interview.
 - Shared assistant image with pinned Hermes and OpenCode.

@@ -25,10 +25,28 @@ host release at /opt/aidee/source.
 If no newer release exists and no host update is pending, respond with
 [SILENT].
 
-If a newer release exists, use the controller-update skill to summarize its
-release notes, migrations, security changes, and fleet update requirements.
-Give the owner the documented SSH preview command. Do not apply the update,
-use sudo, or modify root-owned files during this cron run."""
+If a newer release exists, use the controller-update skill. Send one short
+Telegram notice in this shape, then one clarify. Do not run sudo on this
+first message.
+
+✨ Aidee <tag> is ready
+
+You're on <installed>.
+
+What's new
+• at most 3 short owner-facing bullets from the release notes
+
+Preview first. Apply updates the host, controller, image, and assistants
+and can take several minutes.
+
+Then send one Telegram clarify whose only options are Start update
+(recommended) and Not now. Do not include SSH commands in this notice.
+Do not apply, use sudo, or modify root-owned files until the owner taps
+Start update.
+
+If the owner taps Start update in this continuity session, run preview
+with sudo, summarize, then clarify Apply now or Cancel. If they tap Apply
+now, run apply --approved and report the result."""
 
 
 def update_status(status_path, all_default_crons_verified):

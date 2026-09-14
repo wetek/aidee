@@ -1,50 +1,96 @@
 # Update an existing Aidee controller
 
-These instructions are for an existing Aidee VPS. Alpha 18 installs the
-onboarding plugin in the assistant Hermes home, records a per-dashboard HTTPS
-origin, and relocates leftover git checkouts. Run the fleet update from the
-owner's SSH terminal with sudo.
+These instructions are for an existing Aidee VPS. When a newer tag exists,
+the controller sends a Telegram notice and offers Start update. After the
+owner taps Start update, then Apply now, the controller runs the fleet
+updater with sudo.
+
+SSH remains a fallback when Telegram clarify is unavailable. Apply can take
+several minutes because it rebuilds the assistant image.
 
 ## Rules
 
 1. Read `https://raw.githubusercontent.com/wetek/aidee/main/LATEST`.
 2. Require a version matching `v<major>.<minor>.<patch>-alpha.<number>`.
-3. Run the root-owned preview from the owner's SSH terminal.
-4. Review the release notes and listed actions.
-5. Run apply only after explicit owner approval.
-6. Verify the host, controller, crons, image, containers, and assistant state.
-7. Never apply from a scheduled run or Hermes interaction.
+3. The first Telegram notice is discovery only. Do not use sudo yet.
+4. Offer `Start update` and `Not now` with one Telegram clarify.
+5. After `Start update`, run preview with sudo and summarize the plan.
+6. After `Apply now`, run apply with `--approved`.
+7. Never apply from an unanswered cron run.
+8. Verify the host, controller, crons, image, containers, and assistant state.
 
 ## Find the latest release
 
 `https://raw.githubusercontent.com/wetek/aidee/main/LATEST`
 
-## Host update
+## Telegram update
+
+Use this notice shape:
+
+~~~text
+✨ Aidee RELEASE is ready
+
+You're on INSTALLED.
+
+What's new
+• at most 3 short owner-facing bullets
+
+Preview first. Apply updates the host, controller, image, and assistants
+and can take several minutes.
+~~~
+
+Then clarify `Start update` (recommended) or `Not now`.
+
+After `Start update`, run preview. After `Apply now`, run apply. Replace
+`RELEASE` with the exact tag from `LATEST`:
+
+~~~bash
+sudo /opt/aidee/source/platform/scripts/update-host.sh \
+  --release RELEASE --preview
+~~~
+
+~~~bash
+sudo /opt/aidee/source/platform/scripts/update-host.sh \
+  --release RELEASE --apply --approved
+~~~
+
+Preview may fetch the release tag, but it does not change active state. Apply
+prints numbered steps and streams the long image build and Hermes update so
+the session stays active. It refreshes root-owned services, controller
+knowledge and Hermes, controller-only default crons, the validated assistant
+image, and all registered assistants.
+It preserves bind-mounted runtime data and rolls back failed container
+replacement. Existing Hermes sessions keep their message history. On the next
+turn after a managed SOUL or tool-context change, Hermes rebuilds and persists
+the effective system prompt and tool list.
+
+## SSH fallback
+
+Use these commands from the owner's SSH terminal only when Telegram clarify
+is unavailable.
 
 ### One-time bootstrap from Alpha 12 or older
 
-Older releases do not contain the fleet updater. Fetch the exact Alpha 18 tag
+Older releases do not contain the fleet updater. Fetch the exact Alpha 19 tag
 and preview it:
 
 ~~~bash
 sudo install -d -m 0755 /opt/aidee/releases
-sudo git clone --branch v0.1.0-alpha.18 --depth 1 \
+sudo git clone --branch v0.1.0-alpha.19 --depth 1 \
   https://github.com/wetek/aidee.git \
-  /opt/aidee/releases/v0.1.0-alpha.18
-sudo /opt/aidee/releases/v0.1.0-alpha.18/platform/scripts/update-host.sh \
-  --release v0.1.0-alpha.18 --preview
+  /opt/aidee/releases/v0.1.0-alpha.19
+sudo /opt/aidee/releases/v0.1.0-alpha.19/platform/scripts/update-host.sh \
+  --release v0.1.0-alpha.19 --preview
 ~~~
 
 After reviewing the preview and explicitly approving it, run:
 
 ~~~bash
-sudo /opt/aidee/releases/v0.1.0-alpha.18/platform/scripts/update-host.sh \
-  --release v0.1.0-alpha.18 --apply --approved
+sudo /opt/aidee/releases/v0.1.0-alpha.19/platform/scripts/update-host.sh \
+  --release v0.1.0-alpha.19 --apply --approved
 ~~~
 
-### Future updates
-
-Use the permanently installed command with the exact tag from `LATEST`:
+### Later SSH updates
 
 ~~~bash
 sudo /opt/aidee/source/platform/scripts/update-host.sh \
@@ -57,16 +103,6 @@ After reviewing and approving the preview:
 sudo /opt/aidee/source/platform/scripts/update-host.sh \
   --release RELEASE --apply --approved
 ~~~
-
-Preview may fetch the release tag, but it does not change active state. Apply
-prints numbered steps and streams the long image build and Hermes update so
-the terminal stays active. It refreshes root-owned services, controller
-knowledge and Hermes, controller-only default crons, the validated assistant
-image, and all registered assistants.
-It preserves bind-mounted runtime data and rolls back failed container
-replacement. Existing Hermes sessions keep their message history. On the next
-turn after a managed SOUL or tool-context change, Hermes rebuilds and persists
-the effective system prompt and tool list.
 
 ## Report
 

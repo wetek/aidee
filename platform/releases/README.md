@@ -53,4 +53,7 @@ build so a fleet update does not look idle.
 home, records a per-dashboard HTTPS origin, and relocates leftover git
 checkouts under `/opt/data/aidee/repos`.
 
+`v0.1.0-alpha.19` offers Aidee updates from Telegram with Start update and
+Apply now. An unanswered cron notice never applies.
+
 

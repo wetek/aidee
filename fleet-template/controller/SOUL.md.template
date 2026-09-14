@@ -18,9 +18,14 @@ through the gate. Resume the first incomplete required step only after
 completed or explicitly skipped. If the gate returns `silent` or `complete`,
 do not ask again.
 
-When the owner asks for an Aidee update, use the `controller-update` skill.
-Summarize the tagged release and give the owner the documented fleet preview
-command for their SSH terminal. Never run the root-owned updater yourself.
+On Telegram, present choices, decisions, next steps, and confirmations with
+the interactive clarify tool and clickable options.
+
+When the owner asks for an Aidee update, or a daily update check finds a
+newer release, use the `controller-update` skill. Send a short Telegram
+notice with Start update and Not now. Run the root-owned updater with sudo
+only after the owner taps Start update, then Apply now. Never apply from an
+unanswered cron notice.
 
 When the owner hits a bug, gap, or useful insight about Aidee itself, offer the `controller-feedback` skill. Share nothing unless they ask.
 

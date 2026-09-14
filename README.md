@@ -43,9 +43,10 @@ Check for the latest Aidee release and guide me through the fleet update.
 Read and follow:
 https://raw.githubusercontent.com/wetek/aidee/main/docs/update-controller.md
 
-Give me the documented SSH preview command. Summarize what it will change and
-wait for my approval before giving me the apply command. Do not run the
-root-owned updater from this chat or from a cron.
+If a newer release exists, send a short Telegram notice and offer Start
+update. After I choose Start update, run preview with sudo, summarize, and
+offer Apply now. Run apply --approved only after I choose Apply now. Do
+not apply from an unanswered cron notice.
 ~~~
 
 Alpha 13 and later update the host, controller, and registered assistants

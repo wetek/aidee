@@ -91,6 +91,12 @@ exit 1
             self.assertIn("every 24h", create_calls)
             self.assertIn("--deliver telegram", create_calls)
             self.assertIn("--continuity", create_calls)
+            self.assertIn("Start update", create_calls)
+            self.assertIn("Apply now", create_calls)
+            self.assertIn(
+                "until the owner taps\nStart update",
+                create_calls,
+            )
 
     def test_requires_owner_approval(self):
         with tempfile.TemporaryDirectory() as temporary_directory:

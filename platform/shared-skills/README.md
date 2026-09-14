@@ -6,7 +6,7 @@ Reusable Hermes skills that every assistant may receive.
 
 `controller-onboarding/SKILL.md` runs at the start of every controller conversation until the onboarding gate returns silent or complete. It verifies owner access, records the owner's Telegram branding choice, and confirms phone dashboard access.
 
-`controller-update/SKILL.md` previews and applies owner-approved Aidee knowledge updates without root access.
+`controller-update/SKILL.md` notices a newer Aidee tag on Telegram, then previews and applies the fleet updater after the owner taps Start update and Apply now.
 
 `controller-feedback/SKILL.md` offers to draft a public GitHub issue when the owner hits a bug, feature request, docs gap, or insight. The owner reviews and submits it. Nothing is shared unless they ask.
 

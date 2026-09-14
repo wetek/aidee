@@ -12,8 +12,8 @@ The root `LATEST` file names the newest published tag for update discovery. Cont
 
 Alpha 13 and later use one owner-approved fleet updater for the host,
 controller knowledge, pinned Hermes runtime, and registered assistants. The
-controller's daily job only discovers releases and gives the owner the
-documented SSH preview command.
+controller's daily job discovers releases and offers Start update on
+Telegram. It applies only after the owner taps Start update, then Apply now.
 
 ## Release process
 

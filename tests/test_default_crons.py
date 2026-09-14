@@ -114,6 +114,12 @@ exit 1
             self.assertIn("--name Aidee fleet health watchdog", create_calls)
             self.assertIn("--deliver telegram", create_calls)
             self.assertIn("--continuity", create_calls)
+            self.assertIn("Start update", create_calls)
+            self.assertIn("Apply now", create_calls)
+            self.assertIn(
+                "until the owner taps\nStart update",
+                create_calls,
+            )
 
     def test_skips_update_check_when_requested(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
