@@ -46,4 +46,7 @@ helper so existing hosts can finish an Alpha 14 apply.
 `v0.1.0-alpha.16` injects the onboarding resume offer on every turn when
 required setup is still incomplete.
 
+`v0.1.0-alpha.17` prints numbered apply steps and streams the long image
+build so a fleet update does not look idle.
+
 

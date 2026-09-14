@@ -92,6 +92,7 @@ else
 fi
 
 if [[ ! -d "${release_dir}/.git" ]]; then
+  echo "Fetching Aidee ${release}..."
   temporary="/opt/aidee/releases/.${release}.$$"
   trap 'rm -rf "${temporary}"' EXIT
   git clone \
@@ -101,7 +102,10 @@ if [[ ! -d "${release_dir}/.git" ]]; then
     "${temporary}"
   mv "${temporary}" "${release_dir}"
   trap - EXIT
+else
+  echo "Using cached Aidee ${release}."
 fi
+echo "Starting ${mode} for ${release}."
 
 fetched_tag="$(git -C "${release_dir}" describe --tags --exact-match 2>/dev/null || true)"
 if [[ "${fetched_tag}" != "${release}" ]] ||

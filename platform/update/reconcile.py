@@ -27,12 +27,39 @@ class ReconcileError(RuntimeError):
 
 
 class Runner:
-    def run(self, command, check=True):
+    def run(self, command, check=True, stream=False):
+        if stream:
+            result = subprocess.run(command)
+            if check and result.returncode:
+                raise ReconcileError(f"{command[0]} failed")
+            return result
         result = subprocess.run(command, capture_output=True, text=True)
         if check and result.returncode:
             detail = result.stderr.strip() or result.stdout.strip()
             raise ReconcileError(f"{command[0]} failed: {detail}")
         return result
+
+
+def emit_progress(index, total, message, stream=None):
+    """Print one apply step so a long run does not look idle."""
+    if stream is None:
+        stream = sys.stdout
+    print(f"[{index}/{total}] {message}", file=stream, flush=True)
+
+
+class StepReporter:
+    def __init__(self, actions, stream=None):
+        self.actions = list(actions)
+        self.stream = sys.stdout if stream is None else stream
+        self.index = 0
+
+    def next(self):
+        if self.index >= len(self.actions):
+            raise ReconcileError("update reported more steps than the printed plan")
+        action = self.actions[self.index]
+        self.index += 1
+        emit_progress(self.index, len(self.actions), action, self.stream)
+        return action
 
 
 def atomic_write(path, content, mode=0o640):
@@ -436,7 +463,9 @@ def container_image(runner, name):
     return result.stdout.strip() if result.returncode == 0 else None
 
 
-def wait_healthy(runner, name, attempts=90):
+def wait_healthy(runner, name, attempts=90, now=time.monotonic, sleep=time.sleep):
+    started = now()
+    last_note = 0
     for _ in range(attempts):
         result = runner.run(
             [
@@ -447,7 +476,11 @@ def wait_healthy(runner, name, attempts=90):
         )
         if result.stdout.strip() in {"healthy", "running"}:
             return
-        time.sleep(1)
+        elapsed = int(now() - started)
+        if elapsed - last_note >= 15:
+            print(f"Still waiting for {name} ({elapsed}s)...", flush=True)
+            last_note = elapsed
+        sleep(1)
     raise ReconcileError(f"replacement container did not become healthy: {name}")
 
 
@@ -477,12 +510,23 @@ def dashboard_response(runner, assistant):
     return runner.run(command, check=False)
 
 
-def wait_dashboard(runner, assistant, attempts=90):
+def wait_dashboard(
+    runner, assistant, attempts=90, now=time.monotonic, sleep=time.sleep
+):
+    started = now()
+    last_note = 0
     for _ in range(attempts):
         result = dashboard_response(runner, assistant)
         if not result.returncode and re.fullmatch(r"[234][0-9]{2}", result.stdout):
             return
-        time.sleep(1)
+        elapsed = int(now() - started)
+        if elapsed - last_note >= 15:
+            print(
+                f"Still waiting for {assistant['id']} dashboard ({elapsed}s)...",
+                flush=True,
+            )
+            last_note = elapsed
+        sleep(1)
     raise ReconcileError(
         f"assistant dashboard did not become ready: {assistant['id']}"
     )
@@ -633,11 +677,12 @@ def activate_release(candidate, release, code_root):
     temporary.replace(source)
 
 
-def run_controller_command(runner, user, home, command, check=True):
+def run_controller_command(runner, user, home, command, check=True, stream=False):
     return runner.run(
         ["runuser", "-u", user, "--", "env", f"HOME={home}",
          f"PATH={home}/.local/bin:/usr/local/bin:/usr/bin:/bin", *command],
         check=check,
+        stream=stream,
     )
 
 
@@ -921,8 +966,8 @@ def action_plan(registry, release):
         f"build and validate the assistant image from exact release {release}",
         "apply pending versioned migrations with backups",
         f"activate exact host release {release}",
-        "refresh root-owned services and Hermes plugins",
         "update the pinned controller Hermes runtime if needed",
+        "refresh root-owned services and Hermes plugins",
         "refresh controller skills and controller-only default crons",
     ]
     actions.extend(
@@ -995,12 +1040,20 @@ def main():
         return 0
 
     runner = Runner()
+    reporter = StepReporter(action_plan(registry, arguments.release))
     controller_home, controller_uid, controller_gid = controller_account(
         arguments.controller_user
     )
     controller_home = str(controller_home)
-    runner.run([str(candidate / "platform/scripts/build-assistant-image.sh")])
-    runner.run([str(candidate / "platform/scripts/validate-assistant-image.sh")])
+    reporter.next()
+    runner.run(
+        [str(candidate / "platform/scripts/build-assistant-image.sh")],
+        stream=True,
+    )
+    runner.run(
+        [str(candidate / "platform/scripts/validate-assistant-image.sh")],
+        stream=True,
+    )
     image_id = validated_image(candidate, arguments.release)
     if requested_owner:
         atomic_write(
@@ -1008,21 +1061,27 @@ def main():
             json.dumps({"name": requested_owner}, indent=2) + "\n",
             0o644,
         )
+    reporter.next()
     run_migrations(candidate, arguments.state_root)
+    reporter.next()
     activate_release(candidate, arguments.release, arguments.code_root)
     source = arguments.code_root / "source"
-    runner.run([str(source / "platform/scripts/install-admin-helper.sh")])
-    runner.run([str(source / "platform/scripts/install-dashboard-plugins.sh")])
+    reporter.next()
     runner.run(
         [
             str(source / "platform/scripts/update-controller-runtime.sh"),
             "--approved",
-        ]
+        ],
+        stream=True,
     )
+    reporter.next()
+    runner.run([str(source / "platform/scripts/install-admin-helper.sh")])
+    runner.run([str(source / "platform/scripts/install-dashboard-plugins.sh")])
     runner.run([str(source / "platform/scripts/install-controller-service.sh")])
     gateway_installer = source / "platform/scripts/install-controller-gateway.sh"
     if gateway_installer.is_file():
         runner.run([str(gateway_installer)])
+    reporter.next()
     run_controller_command(
         runner,
         arguments.controller_user,
@@ -1037,6 +1096,7 @@ def main():
             "--approved",
             "--skip-fleet-sync",
         ],
+        stream=True,
     )
     controller_status = reconcile_controller_onboarding(
         source,
@@ -1067,6 +1127,7 @@ def main():
     replaced_assistants = []
     try:
         for assistant in registry["assistants"]:
+            reporter.next()
             replaced = replace_container_pair(
                 runner,
                 assistant,
@@ -1086,6 +1147,7 @@ def main():
                 wait_healthy(runner, name)
                 wait_healthy(runner, proxy)
                 wait_dashboard(runner, assistant)
+        reporter.next()
         verify(
             runner,
             arguments.release,

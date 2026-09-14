@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import importlib.util
+import io
 import json
 import os
 import subprocess
@@ -40,7 +41,7 @@ class FakeDockerRunner:
     def result(self, command, code=0, stdout="", stderr=""):
         return subprocess.CompletedProcess(command, code, stdout, stderr)
 
-    def run(self, command, check=True):
+    def run(self, command, check=True, stream=False):
         if command[:2] == ["docker", "inspect"]:
             name = command[2]
             if name not in self.images:
@@ -515,6 +516,49 @@ class FleetUpdateTests(unittest.TestCase):
         self.assertEqual(
             runner.images["aidee-pilot-dashboard-proxy"], "sha256:old"
         )
+
+    def test_progress_lines_are_numbered(self):
+        output = io.StringIO()
+        reporter = reconcile.StepReporter(
+            ["build the image", "verify the fleet"], stream=output
+        )
+        self.assertEqual(reporter.next(), "build the image")
+        self.assertEqual(reporter.next(), "verify the fleet")
+        self.assertEqual(
+            output.getvalue(),
+            "[1/2] build the image\n[2/2] verify the fleet\n",
+        )
+
+    def test_wait_healthy_prints_while_polling(self):
+        class Delayed:
+            def __init__(self):
+                self.calls = 0
+
+            def run(self, command, check=True, stream=False):
+                self.calls += 1
+                status = "healthy" if self.calls > 16 else "starting"
+                return subprocess.CompletedProcess(command, 0, status + "\n", "")
+
+        clock = [0]
+
+        def now():
+            return clock[0]
+
+        def sleep(_seconds):
+            clock[0] += 1
+
+        output = io.StringIO()
+        with mock.patch("sys.stdout", output):
+            reconcile.wait_healthy(
+                Delayed(), "aidee-pilot", attempts=20, now=now, sleep=sleep
+            )
+        self.assertIn("Still waiting for aidee-pilot (15s)...", output.getvalue())
+
+    def test_streamed_command_keeps_zero_exit(self):
+        result = reconcile.Runner().run(
+            [sys.executable, "-c", "raise SystemExit(0)"], stream=True
+        )
+        self.assertEqual(result.returncode, 0)
 
 
 if __name__ == "__main__":

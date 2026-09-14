@@ -86,7 +86,7 @@ def validate_schemas():
     jsonschema.validate(telegram_profile, telegram_profile_schema)
     jsonschema.validate(
         {
-            "aidee_version": "v0.1.0-alpha.16",
+            "aidee_version": "v0.1.0-alpha.17",
             "source_commit": "a" * 40,
             "tag": "aidee-assistant:0.1.0-alpha.11-aaaaaaaaaaaa",
             "image_id": "sha256:" + "b" * 64,
@@ -215,8 +215,8 @@ def validate_setup_guidance():
     ]:
         if required_text not in setup:
             raise AssertionError(f"Setup handoff is missing: {required_text}")
-    if latest != "v0.1.0-alpha.16":
-        raise AssertionError("LATEST does not name the Alpha 16 release")
+    if latest != "v0.1.0-alpha.17":
+        raise AssertionError("LATEST does not name the Alpha 17 release")
     if f'"release": "{latest}"' not in setup:
         raise AssertionError("Setup guide does not use the LATEST release")
 

@@ -1,8 +1,8 @@
 # Update an existing Aidee controller
 
-These instructions are for an existing Aidee VPS. Alpha 16 injects the
-onboarding resume offer on every turn when required setup is still
-incomplete. Run the fleet update from the owner's SSH terminal with sudo.
+These instructions are for an existing Aidee VPS. Alpha 17 prints numbered
+apply steps and streams the long image build. Run the fleet update from the
+owner's SSH terminal with sudo.
 
 ## Rules
 
@@ -22,23 +22,23 @@ incomplete. Run the fleet update from the owner's SSH terminal with sudo.
 
 ### One-time bootstrap from Alpha 12 or older
 
-Older releases do not contain the fleet updater. Fetch the exact Alpha 16 tag
+Older releases do not contain the fleet updater. Fetch the exact Alpha 17 tag
 and preview it:
 
 ~~~bash
 sudo install -d -m 0755 /opt/aidee/releases
-sudo git clone --branch v0.1.0-alpha.16 --depth 1 \
+sudo git clone --branch v0.1.0-alpha.17 --depth 1 \
   https://github.com/wetek/aidee.git \
-  /opt/aidee/releases/v0.1.0-alpha.16
-sudo /opt/aidee/releases/v0.1.0-alpha.16/platform/scripts/update-host.sh \
-  --release v0.1.0-alpha.16 --preview
+  /opt/aidee/releases/v0.1.0-alpha.17
+sudo /opt/aidee/releases/v0.1.0-alpha.17/platform/scripts/update-host.sh \
+  --release v0.1.0-alpha.17 --preview
 ~~~
 
 After reviewing the preview and explicitly approving it, run:
 
 ~~~bash
-sudo /opt/aidee/releases/v0.1.0-alpha.16/platform/scripts/update-host.sh \
-  --release v0.1.0-alpha.16 --apply --approved
+sudo /opt/aidee/releases/v0.1.0-alpha.17/platform/scripts/update-host.sh \
+  --release v0.1.0-alpha.17 --apply --approved
 ~~~
 
 ### Future updates
@@ -58,8 +58,10 @@ sudo /opt/aidee/source/platform/scripts/update-host.sh \
 ~~~
 
 Preview may fetch the release tag, but it does not change active state. Apply
-refreshes root-owned services, controller knowledge and Hermes, controller-only
-default crons, the validated assistant image, and all registered assistants.
+prints numbered steps and streams the long image build and Hermes update so
+the terminal stays active. It refreshes root-owned services, controller
+knowledge and Hermes, controller-only default crons, the validated assistant
+image, and all registered assistants.
 It preserves bind-mounted runtime data and rolls back failed container
 replacement. Existing Hermes sessions keep their message history. On the next
 turn after a managed SOUL or tool-context change, Hermes rebuilds and persists
