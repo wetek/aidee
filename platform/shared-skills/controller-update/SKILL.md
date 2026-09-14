@@ -52,7 +52,9 @@ Summarize the planned actions in short bullets. Then send one Telegram
 clarify whose only labels are Apply now and Cancel. Do not write those
 labels in the message body.
 
-Tell the owner that apply can take several minutes.
+Tell the owner that apply can take several minutes, that the updater
+sends a Telegram result when it finishes, and that the chat may
+reconnect when the gateway restarts.
 
 ## After Apply now
 
@@ -62,11 +64,29 @@ Run:
 sudo /opt/aidee/source/platform/scripts/update-host.sh --release TAG --apply --approved
 ~~~
 
-Wait until it finishes. Do not start a second apply. `--approved` is valid
-only after the owner chose Apply now in this chat.
+Do not start a second apply. `--approved` is valid only after the owner
+chose Apply now in this chat.
 
-Report host, controller, cron, image, and assistant results. Name any
-rollback or incomplete onboarding step.
+The updater detaches from this chat, writes
+`/var/lib/aidee/fleet/UPDATE_STATUS.json`, and sends its own Telegram
+result. Gateway shutdown or session-restore messages are not the
+result. If this command is interrupted, read that status file with sudo
+and report it. Do not start another apply while `phase` is `running`.
+
+If apply returns, summarize host, controller, cron, image, and
+assistant results. Name any rollback or incomplete onboarding step.
+
+## After gateway shutdown or session restore
+
+Read:
+
+~~~bash
+sudo cat /var/lib/aidee/fleet/UPDATE_STATUS.json
+~~~
+
+- `running`: tell the owner the update is still running. Do not apply again.
+- `completed`: tell the owner the update already finished. Do not apply again.
+- `failed`: report the error. Do not apply again unless the owner asks.
 
 ## Fallback
 

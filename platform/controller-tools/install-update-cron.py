@@ -47,7 +47,9 @@ root-owned files until the owner sends Start update.
 
 If the owner sends Start update in this chat, run preview with sudo,
 summarize, then use the Telegram clarify tool for Apply now or Cancel.
-If they send Apply now, run apply --approved and report the result."""
+If they send Apply now, run apply --approved. The updater sends its own
+Telegram result. If the chat reconnects, read
+/var/lib/aidee/fleet/UPDATE_STATUS.json and do not start a second apply."""
 
 
 def update_status(status_path, all_default_crons_verified):

@@ -758,6 +758,118 @@ class FleetUpdateTests(unittest.TestCase):
         self.assertIn("--start-on-login", installer)
         self.assertIn("</dev/null", installer)
 
+    def test_gateway_install_can_defer_restart(self):
+        installer = (
+            ROOT / "platform/scripts/install-controller-gateway.sh"
+        ).read_text()
+        self.assertIn("--defer-restart", installer)
+        self.assertIn("gateway_unit_exists", installer)
+        self.assertIn('"${defer_restart}" != true', installer)
+        command = reconcile.controller_gateway_command(
+            ROOT, defer_restart=True
+        )
+        self.assertEqual(command[-1], "--defer-restart")
+        self.assertTrue(
+            reconcile.apply_needs_detach(
+                "0::/system.slice/hermes-gateway.service\n", {}
+            )
+        )
+        self.assertFalse(
+            reconcile.apply_needs_detach(
+                "0::/system.slice/hermes-gateway.service\n",
+                {reconcile.DETACHED_ENV: "1"},
+            )
+        )
+        self.assertFalse(
+            reconcile.apply_needs_detach("0::/user.slice\n", {})
+        )
+        detach = reconcile.detach_apply_command(
+            "/usr/bin/python3", ["reconcile.py", "--apply"]
+        )
+        self.assertEqual(detach[0], "systemd-run")
+        self.assertIn("--wait", detach)
+        self.assertIn("--property=TimeoutStartSec=infinity", detach)
+        self.assertIn(f"--setenv={reconcile.DETACHED_ENV}=1", detach)
+
+    def test_update_status_and_owner_notice(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state_root = Path(temporary)
+            reconcile.write_update_status(
+                state_root,
+                "v0.1.0-alpha.26",
+                "running",
+                current_step="starting",
+            )
+            status = json.loads(
+                reconcile.update_status_path(state_root).read_text()
+            )
+            self.assertEqual(status["phase"], "running")
+            self.assertEqual(status["release"], "v0.1.0-alpha.26")
+            self.assertEqual(status["current_step"], "starting")
+        notice = reconcile.format_update_success("v0.1.0-alpha.26")
+        self.assertIn("Aidee v0.1.0-alpha.26 is installed.", notice)
+        self.assertIn("No further action is needed.", notice)
+        failure = reconcile.format_update_failure(
+            "v0.1.0-alpha.26", "image build failed"
+        )
+        self.assertIn("did not finish", failure)
+        self.assertIn("image build failed", failure)
+        command = reconcile.owner_notice_command(
+            ROOT, "/tmp/.env", notice
+        )
+        self.assertIn("send-telegram-choices.py", command[1])
+        self.assertNotIn("--choice", command)
+        skill = (
+            ROOT / "platform/shared-skills/controller-update/SKILL.md"
+        ).read_text()
+        self.assertIn("UPDATE_STATUS.json", skill)
+        self.assertIn("session restore", skill)
+        docs = (ROOT / "docs/update-controller.md").read_text()
+        self.assertIn("UPDATE_STATUS.json", docs)
+
+    def test_apply_notifies_before_gateway_restart(self):
+        source = RECONCILER_PATH.read_text()
+        main_source = source[source.index("def main():"):]
+        defer_at = main_source.index(
+            "controller_gateway_command(source, defer_restart=True)"
+        )
+        success_at = main_source.index("format_update_success(arguments.release)")
+        restart_at = main_source.index("restart_controller_gateway(runner)")
+        self.assertLess(defer_at, success_at)
+        self.assertLess(success_at, restart_at)
+
+    def test_owner_notice_failure_does_not_raise(self):
+        runner = mock.Mock()
+        runner.run.return_value = subprocess.CompletedProcess(
+            ["send-telegram-choices.py"], 1, "", "bot token missing"
+        )
+        self.assertFalse(
+            reconcile.notify_owner(
+                ROOT,
+                "/tmp/controller",
+                "Aidee v0.1.0-alpha.26 is installed.",
+                runner=runner,
+            )
+        )
+
+    def test_gateway_restart_requires_active_service(self):
+        runner = mock.Mock()
+        runner.run.side_effect = [
+            subprocess.CompletedProcess(["systemctl", "restart"], 0, "", ""),
+            subprocess.CompletedProcess(
+                ["systemctl", "is-active"], 0, "active\n", ""
+            ),
+        ]
+        reconcile.restart_controller_gateway(runner)
+        runner.run.side_effect = [
+            subprocess.CompletedProcess(["systemctl", "restart"], 0, "", ""),
+            subprocess.CompletedProcess(
+                ["systemctl", "is-active"], 3, "failed\n", ""
+            ),
+        ]
+        with self.assertRaisesRegex(reconcile.ReconcileError, "did not come back"):
+            reconcile.restart_controller_gateway(runner)
+
     def test_plugin_enable_skips_the_tool_override_prompt(self):
         install = (
             ROOT / "platform/scripts/install-dashboard-plugins.sh"

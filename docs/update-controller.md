@@ -20,6 +20,10 @@ several minutes because it rebuilds the assistant image.
 6. After `Apply now`, run apply with `--approved`.
 7. Never apply from an unanswered cron run.
 8. Verify the host, controller, crons, image, containers, and assistant state.
+9. After a gateway shutdown or session restore, read
+   `/var/lib/aidee/fleet/UPDATE_STATUS.json` before starting another apply.
+10. Treat the updater Telegram result as the apply outcome. Gateway shutdown
+    and session-restore messages are not the outcome.
 
 ## Find the latest release
 
@@ -63,6 +67,11 @@ prints numbered steps and streams the long image build and Hermes update so
 the session stays active. It refreshes root-owned services, controller
 knowledge and Hermes, controller-only default crons, the validated assistant
 image, and all registered assistants.
+If apply is started from Telegram, it continues in a detached systemd unit so
+a gateway restart cannot kill it. It writes
+`/var/lib/aidee/fleet/UPDATE_STATUS.json`, sends a Telegram result when it
+finishes, then restarts the gateway. Gateway shutdown and session-restore
+messages can still appear after that notice. They do not mean apply failed.
 It preserves bind-mounted runtime data and rolls back failed container
 replacement. Existing Hermes sessions keep their message history. On the next
 turn after a managed SOUL or tool-context change, Hermes rebuilds and persists

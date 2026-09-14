@@ -20,6 +20,10 @@ RELEASE_PATTERN = r"^v[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]+$"
 ASSISTANT_ID_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
 UPDATE_JOB = "Aidee daily update check"
 WATCHDOG_JOB = "Aidee fleet health watchdog"
+UPDATE_STATUS_RELATIVE = Path("fleet/UPDATE_STATUS.json")
+GATEWAY_SERVICE = "hermes-gateway.service"
+FLEET_UPDATE_UNIT = "aidee-fleet-update.service"
+DETACHED_ENV = "AIDEE_FLEET_UPDATE_DETACHED"
 # s6 plus Hermes dashboard often needs more than 90s after create. Keep a
 # heartbeat while polling docker healthy and the loopback dashboard.
 CONTAINER_WAIT_ATTEMPTS = 240
@@ -58,9 +62,10 @@ def emit_progress(index, total, message, stream=None):
 
 
 class StepReporter:
-    def __init__(self, actions, stream=None):
+    def __init__(self, actions, stream=None, on_step=None):
         self.actions = list(actions)
         self.stream = sys.stdout if stream is None else stream
+        self.on_step = on_step
         self.index = 0
 
     def next(self):
@@ -69,7 +74,146 @@ class StepReporter:
         action = self.actions[self.index]
         self.index += 1
         emit_progress(self.index, len(self.actions), action, self.stream)
+        if self.on_step is not None:
+            self.on_step(action)
         return action
+
+
+def read_cgroup_text(path=None):
+    cgroup_path = Path("/proc/self/cgroup") if path is None else Path(path)
+    try:
+        return cgroup_path.read_text()
+    except OSError:
+        return ""
+
+
+def apply_needs_detach(cgroup_text=None, environ=None):
+    environ = os.environ if environ is None else environ
+    if environ.get(DETACHED_ENV) == "1":
+        return False
+    if cgroup_text is None:
+        cgroup_text = read_cgroup_text()
+    return GATEWAY_SERVICE in cgroup_text
+
+
+def detach_apply_command(executable, argv):
+    return [
+        "systemd-run",
+        f"--unit={FLEET_UPDATE_UNIT.removesuffix('.service')}",
+        "--collect",
+        "--wait",
+        "--same-dir",
+        "--property=Type=oneshot",
+        "--property=TimeoutStartSec=infinity",
+        f"--setenv={DETACHED_ENV}=1",
+        "--",
+        executable,
+        *argv,
+    ]
+
+
+def ensure_fleet_update_unit_free(runner):
+    state = runner.run(
+        ["systemctl", "is-active", FLEET_UPDATE_UNIT],
+        check=False,
+    ).stdout.strip()
+    if state in {"active", "activating"}:
+        raise ReconcileError(
+            f"a fleet update is already running as {FLEET_UPDATE_UNIT}"
+        )
+    if state == "failed":
+        runner.run(["systemctl", "reset-failed", FLEET_UPDATE_UNIT], check=False)
+
+
+def detach_apply(runner=None):
+    runner = Runner() if runner is None else runner
+    ensure_fleet_update_unit_free(runner)
+    print(
+        "Continuing apply in a detached systemd unit so a gateway restart "
+        "cannot interrupt it.",
+        flush=True,
+    )
+    return subprocess.run(detach_apply_command(sys.executable, sys.argv)).returncode
+
+
+def update_status_path(state_root):
+    return Path(state_root) / UPDATE_STATUS_RELATIVE
+
+
+def write_update_status(state_root, release, phase, current_step=None, error=None):
+    payload = {
+        "schema_version": 1,
+        "release": release,
+        "phase": phase,
+        "current_step": current_step,
+        "error": error,
+    }
+    atomic_write(
+        update_status_path(state_root),
+        json.dumps(payload, indent=2) + "\n",
+        0o640,
+    )
+
+
+def controller_gateway_command(source, defer_restart=True):
+    command = [str(Path(source) / "platform/scripts/install-controller-gateway.sh")]
+    if defer_restart:
+        command.append("--defer-restart")
+    return command
+
+
+def restart_controller_gateway(runner):
+    runner.run(["systemctl", "restart", GATEWAY_SERVICE])
+    active = runner.run(
+        ["systemctl", "is-active", GATEWAY_SERVICE], check=False
+    ).stdout.strip()
+    if active != "active":
+        raise ReconcileError(f"{GATEWAY_SERVICE} did not come back after restart")
+
+
+def controller_telegram_env(controller_home):
+    return Path(controller_home) / ".hermes" / ".env"
+
+
+def owner_notice_command(source, env_file, text):
+    return [
+        sys.executable,
+        str(Path(source) / "platform/controller-tools/send-telegram-choices.py"),
+        "--env-file",
+        str(env_file),
+        "--text",
+        text,
+    ]
+
+
+def format_update_success(release):
+    return (
+        f"Aidee {release} is installed.\n\n"
+        "Host, controller, image, and assistants are verified.\n"
+        "The Telegram gateway will restart next. The chat may reconnect. "
+        "No further action is needed."
+    )
+
+
+def format_update_failure(release, error):
+    return f"Aidee update to {release} did not finish.\n\n{error}"
+
+
+def notify_owner(source, controller_home, text, runner=None):
+    env_file = controller_telegram_env(controller_home)
+    command = owner_notice_command(source, env_file, text)
+    if runner is None:
+        result = subprocess.run(command, capture_output=True, text=True)
+    else:
+        result = runner.run(command, check=False)
+    if result.returncode:
+        detail = (result.stderr or result.stdout or "").strip()
+        print(
+            f"warning: could not notify owner on Telegram: {detail}",
+            file=sys.stderr,
+        )
+        return False
+    return True
 
 
 def atomic_write(path, content, mode=0o640):
@@ -1078,6 +1222,8 @@ def main():
     if arguments.mode == "apply" and not arguments.approved:
         print("error: apply requires explicit owner approval", file=sys.stderr)
         return 2
+    if arguments.mode == "apply" and apply_needs_detach():
+        return detach_apply()
     candidate = arguments.candidate.resolve()
     validate_candidate(candidate, arguments.release)
     requested_owner = (
@@ -1095,141 +1241,193 @@ def main():
         return 0
 
     runner = Runner()
-    reporter = StepReporter(action_plan(registry, arguments.release))
-    controller_home, controller_uid, controller_gid = controller_account(
-        arguments.controller_user
-    )
-    controller_home = str(controller_home)
-    reporter.next()
-    image_id = ensure_assistant_image(runner, candidate, arguments.release)
-    if requested_owner:
-        atomic_write(
-            Path("/etc/aidee/owner.json"),
-            json.dumps({"name": requested_owner}, indent=2) + "\n",
-            0o644,
-        )
-    reporter.next()
-    run_migrations(candidate, arguments.state_root)
-    reporter.next()
-    activate_release(candidate, arguments.release, arguments.code_root)
-    source = arguments.code_root / "source"
-    reporter.next()
-    runner.run(
-        [
-            str(source / "platform/scripts/update-controller-runtime.sh"),
-            "--approved",
-        ],
-        stream=True,
-    )
-    reporter.next()
-    runner.run(
-        [str(source / "platform/scripts/install-admin-helper.sh")],
-        stream=True,
-    )
-    runner.run(
-        [str(source / "platform/scripts/install-dashboard-plugins.sh")],
-        stream=True,
-    )
-    runner.run(
-        [str(source / "platform/scripts/install-controller-service.sh")],
-        stream=True,
-    )
-    gateway_installer = source / "platform/scripts/install-controller-gateway.sh"
-    if gateway_installer.is_file():
-        runner.run([str(gateway_installer)], stream=True)
-    reporter.next()
-    run_controller_command(
-        runner,
-        arguments.controller_user,
-        controller_home,
-        [
-            "env",
-            f"AIDEE_REPOSITORY={source.as_uri()}",
-            str(source / "platform/scripts/sync-controller.sh"),
-            "--release",
-            arguments.release,
-            "--apply",
-            "--approved",
-            "--skip-fleet-sync",
-        ],
-        stream=True,
-    )
-    controller_status = reconcile_controller_onboarding(
-        source,
-        arguments.state_root,
-        owner_name(Path("/etc/aidee/owner.json")),
-    )
-    run_controller_command(
-        runner,
-        arguments.controller_user,
-        controller_home,
-        [
-            "env",
-            f"AIDEE_STATE_DIR={arguments.state_root}",
-            "python3",
-            str(source / "platform/controller-tools/install-default-crons.py"),
-            "--approved",
-            "--status-file",
-            str(controller_status),
-        ],
-    )
-    registry, changed_files = sync_assistant_state(
-        source,
-        arguments.state_root,
-        owner_name(Path("/etc/aidee/owner.json")),
-        controller_uid,
-        controller_gid,
-    )
-    replaced_assistants = []
-    try:
-        for assistant in registry["assistants"]:
-            reporter.next()
-            replaced = replace_container_pair(
-                runner,
-                assistant,
-                image_id,
-                arguments.state_root,
-                controller_gid,
-                retain_backup=True,
-            )
-            if replaced:
-                replaced_assistants.append(assistant)
-            elif assistant["id"] in changed_files:
-                name = assistant.get("container_name") or f"aidee-{assistant['id']}"
-                runner.run(["docker", "restart", name])
-                proxy = f"{name}-dashboard-proxy"
-                if container_image(runner, proxy):
-                    runner.run(["docker", "restart", proxy])
-                wait_healthy(runner, name)
-                wait_healthy(runner, proxy)
-                wait_dashboard(runner, assistant)
-        reporter.next()
-        verify(
-            runner,
-            arguments.release,
-            source,
+    controller_home = None
+
+    def record_step(action):
+        write_update_status(
             arguments.state_root,
+            arguments.release,
+            "running",
+            current_step=action,
+        )
+
+    write_update_status(
+        arguments.state_root, arguments.release, "running", current_step="starting"
+    )
+    reporter = StepReporter(
+        action_plan(registry, arguments.release), on_step=record_step
+    )
+    try:
+        controller_home, controller_uid, controller_gid = controller_account(
+            arguments.controller_user
+        )
+        controller_home = str(controller_home)
+        reporter.next()
+        image_id = ensure_assistant_image(runner, candidate, arguments.release)
+        if requested_owner:
+            atomic_write(
+                Path("/etc/aidee/owner.json"),
+                json.dumps({"name": requested_owner}, indent=2) + "\n",
+                0o644,
+            )
+        reporter.next()
+        run_migrations(candidate, arguments.state_root)
+        reporter.next()
+        activate_release(candidate, arguments.release, arguments.code_root)
+        source = arguments.code_root / "source"
+        reporter.next()
+        runner.run(
+            [
+                str(source / "platform/scripts/update-controller-runtime.sh"),
+                "--approved",
+            ],
+            stream=True,
+        )
+        reporter.next()
+        runner.run(
+            [str(source / "platform/scripts/install-admin-helper.sh")],
+            stream=True,
+        )
+        runner.run(
+            [str(source / "platform/scripts/install-dashboard-plugins.sh")],
+            stream=True,
+        )
+        runner.run(
+            [str(source / "platform/scripts/install-controller-service.sh")],
+            stream=True,
+        )
+        gateway_installer = source / "platform/scripts/install-controller-gateway.sh"
+        if gateway_installer.is_file():
+            runner.run(
+                controller_gateway_command(source, defer_restart=True),
+                stream=True,
+            )
+        reporter.next()
+        run_controller_command(
+            runner,
             arguments.controller_user,
             controller_home,
-            image_id,
-            registry,
+            [
+                "env",
+                f"AIDEE_REPOSITORY={source.as_uri()}",
+                str(source / "platform/scripts/sync-controller.sh"),
+                "--release",
+                arguments.release,
+                "--apply",
+                "--approved",
+                "--skip-fleet-sync",
+            ],
+            stream=True,
         )
-        update_registry(registry_path, registry, arguments.release, image_id)
-    except Exception:
-        for assistant in reversed(replaced_assistants):
-            rollback_container_pair(runner, assistant)
+        controller_status = reconcile_controller_onboarding(
+            source,
+            arguments.state_root,
+            owner_name(Path("/etc/aidee/owner.json")),
+        )
+        run_controller_command(
+            runner,
+            arguments.controller_user,
+            controller_home,
+            [
+                "env",
+                f"AIDEE_STATE_DIR={arguments.state_root}",
+                "python3",
+                str(source / "platform/controller-tools/install-default-crons.py"),
+                "--approved",
+                "--status-file",
+                str(controller_status),
+            ],
+        )
+        registry, changed_files = sync_assistant_state(
+            source,
+            arguments.state_root,
+            owner_name(Path("/etc/aidee/owner.json")),
+            controller_uid,
+            controller_gid,
+        )
+        replaced_assistants = []
+        try:
+            for assistant in registry["assistants"]:
+                reporter.next()
+                replaced = replace_container_pair(
+                    runner,
+                    assistant,
+                    image_id,
+                    arguments.state_root,
+                    controller_gid,
+                    retain_backup=True,
+                )
+                if replaced:
+                    replaced_assistants.append(assistant)
+                elif assistant["id"] in changed_files:
+                    name = assistant.get("container_name") or f"aidee-{assistant['id']}"
+                    runner.run(["docker", "restart", name])
+                    proxy = f"{name}-dashboard-proxy"
+                    if container_image(runner, proxy):
+                        runner.run(["docker", "restart", proxy])
+                    wait_healthy(runner, name)
+                    wait_healthy(runner, proxy)
+                    wait_dashboard(runner, assistant)
+            reporter.next()
+            verify(
+                runner,
+                arguments.release,
+                source,
+                arguments.state_root,
+                arguments.controller_user,
+                controller_home,
+                image_id,
+                registry,
+            )
+            update_registry(registry_path, registry, arguments.release, image_id)
+        except Exception:
+            for assistant in reversed(replaced_assistants):
+                rollback_container_pair(runner, assistant)
+            raise
+        cleanup_failures = []
+        for assistant in replaced_assistants:
+            cleanup_failures.extend(finalize_container_pair(runner, assistant))
+        if cleanup_failures:
+            print(
+                "warning: stale rollback containers require cleanup: "
+                + ", ".join(cleanup_failures),
+                file=sys.stderr,
+            )
+        write_update_status(
+            arguments.state_root,
+            arguments.release,
+            "completed",
+            current_step="verified",
+        )
+        notify_owner(
+            candidate,
+            controller_home,
+            format_update_success(arguments.release),
+            runner=runner,
+        )
+        try:
+            restart_controller_gateway(runner)
+        except ReconcileError as error:
+            print(f"warning: {error}", file=sys.stderr)
+        print(f"Aidee fleet updated and verified at {arguments.release}.")
+        return 0
+    except BaseException as error:
+        if isinstance(error, SystemExit):
+            raise
+        write_update_status(
+            arguments.state_root,
+            arguments.release,
+            "failed",
+            error=str(error),
+        )
+        if controller_home:
+            notify_owner(
+                candidate,
+                controller_home,
+                format_update_failure(arguments.release, error),
+                runner=runner,
+            )
         raise
-    cleanup_failures = []
-    for assistant in replaced_assistants:
-        cleanup_failures.extend(finalize_container_pair(runner, assistant))
-    if cleanup_failures:
-        print(
-            "warning: stale rollback containers require cleanup: "
-            + ", ".join(cleanup_failures),
-            file=sys.stderr,
-        )
-    print(f"Aidee fleet updated and verified at {arguments.release}.")
-    return 0
 
 
 if __name__ == "__main__":

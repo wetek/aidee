@@ -134,41 +134,74 @@ def telegram_request(token, method, payload):
     return result.get("result")
 
 
-def send_choices(text, choices, env_file=None, chat_id=None, requester=telegram_request):
+def build_notice_payload(text, chat_id):
+    if not isinstance(text, str) or not text.strip():
+        raise ChoicesError("message text is required")
+    if len(text) > 4096:
+        raise ChoicesError("message text must be at most 4096 characters")
+    if not chat_id or not str(chat_id).strip():
+        raise ChoicesError("chat id is required")
+    return {
+        "chat_id": str(chat_id).strip(),
+        "text": text.strip(),
+    }
+
+
+def resolve_telegram_env(env_file=None, chat_id=None):
     if env_file is None:
         env_file = first_existing(default_env_files())
     if env_file is None:
         raise ChoicesError("controller Telegram environment file was not found")
     token = read_env_value(env_file, "TELEGRAM_BOT_TOKEN")
     target = resolve_chat_id(explicit=chat_id, env_file=env_file)
+    return token, target
+
+
+def send_choices(text, choices, env_file=None, chat_id=None, requester=telegram_request):
+    token, target = resolve_telegram_env(env_file=env_file, chat_id=chat_id)
     payload = build_send_payload(text, choices, target)
+    requester(token, "sendMessage", payload)
+    return payload
+
+
+def send_notice(text, env_file=None, chat_id=None, requester=telegram_request):
+    token, target = resolve_telegram_env(env_file=env_file, chat_id=chat_id)
+    payload = build_notice_payload(text, target)
     requester(token, "sendMessage", payload)
     return payload
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Send a Telegram notice with tap-to-send choice buttons."
+        description="Send a Telegram notice, with optional tap-to-send choice buttons."
     )
     parser.add_argument("--env-file", type=Path)
     parser.add_argument("--chat-id")
     parser.add_argument("--text")
-    parser.add_argument("--choice", action="append", dest="choices", required=True)
+    parser.add_argument("--choice", action="append", dest="choices")
     arguments = parser.parse_args()
     text = arguments.text
     if text is None:
         text = sys.stdin.read()
     try:
-        send_choices(
-            text,
-            arguments.choices,
-            env_file=arguments.env_file,
-            chat_id=arguments.chat_id,
-        )
+        if arguments.choices:
+            send_choices(
+                text,
+                arguments.choices,
+                env_file=arguments.env_file,
+                chat_id=arguments.chat_id,
+            )
+            print("Telegram choices sent.")
+        else:
+            send_notice(
+                text,
+                env_file=arguments.env_file,
+                chat_id=arguments.chat_id,
+            )
+            print("Telegram notice sent.")
     except ChoicesError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
-    print("Telegram choices sent.")
     return 0
 
 

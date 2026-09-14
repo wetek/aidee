@@ -71,5 +71,8 @@ notice as tap-to-send buttons, and reads the current tag from `LATEST`.
 `v0.1.0-alpha.25` is a no-op tag so a host on Alpha 24 can smoke test the
 update notice.
 
+`v0.1.0-alpha.26` keeps Telegram apply alive across a gateway restart and
+sends a result before the chat reconnects.
+
 
 

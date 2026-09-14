@@ -153,6 +153,9 @@ exists, it sends a Telegram notice with Start update and Not now as tap-to-send
 buttons. Cron cannot use the clarify tool, so the notice is sent with
 `send-telegram-choices.py`. It does not apply until the owner confirms in
 Telegram. After Start update it runs preview, then apply after Apply now.
+Apply started from Telegram continues outside the gateway process so a
+gateway restart cannot stop it. The updater writes fleet update status and
+sends its own Telegram result before it restarts the gateway.
 
 ## Assistant provisioning
 

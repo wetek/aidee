@@ -11,6 +11,19 @@ fail() {
   exit 1
 }
 
+defer_restart=false
+while (( $# > 0 )); do
+  case "$1" in
+    --defer-restart)
+      defer_restart=true
+      shift
+      ;;
+    *)
+      fail "Unknown argument: $1"
+      ;;
+  esac
+done
+
 if [[ "${EUID}" -ne 0 ]]; then
   fail "Run this script with sudo after configuring the controller."
 fi
@@ -33,17 +46,24 @@ ${AIDEE_CONTROLLER_USER} ALL=(ALL) NOPASSWD: ALL
 EOF
 chmod 0440 "/etc/sudoers.d/${AIDEE_CONTROLLER_USER}"
 
-env \
-  HOME="${controller_home}" \
-  HERMES_HOME="${hermes_home}" \
-  "${hermes_binary}" \
-  gateway install \
-  --force \
-  --system \
-  --run-as-user "${AIDEE_CONTROLLER_USER}" \
-  --start-now \
-  --start-on-login \
-  </dev/null
+gateway_unit_exists=false
+if systemctl cat "${service_name}" >/dev/null 2>&1; then
+  gateway_unit_exists=true
+fi
+
+if [[ "${defer_restart}" != true || "${gateway_unit_exists}" != true ]]; then
+  env \
+    HOME="${controller_home}" \
+    HERMES_HOME="${hermes_home}" \
+    "${hermes_binary}" \
+    gateway install \
+    --force \
+    --system \
+    --run-as-user "${AIDEE_CONTROLLER_USER}" \
+    --start-now \
+    --start-on-login \
+    </dev/null
+fi
 
 install -d -m 0755 -o root -g root "${drop_in_dir}"
 cat > "${drop_in_dir}/aidee-hardening.conf" <<EOF
@@ -61,7 +81,9 @@ EOF
 
 chmod 0644 "${drop_in_dir}/aidee-hardening.conf"
 systemctl daemon-reload
-systemctl restart "${service_name}"
+if [[ "${defer_restart}" != true ]]; then
+  systemctl restart "${service_name}"
+fi
 
 if ! systemctl is-active --quiet "${service_name}"; then
   systemctl status "${service_name}" --no-pager >&2 || true

@@ -74,6 +74,53 @@ class TelegramChoicesTests(unittest.TestCase):
                 "Start update",
             )
 
+    def test_sends_a_plain_notice_without_buttons(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            env_file = Path(temporary_directory) / ".env"
+            env_file.write_text(
+                "TELEGRAM_BOT_TOKEN=test-token\n"
+                "TELEGRAM_HOME_CHANNEL=4242\n"
+            )
+            captured = {}
+
+            def requester(token, method, payload):
+                captured["token"] = token
+                captured["method"] = method
+                captured["payload"] = payload
+                return {"message_id": 11}
+
+            payload = telegram_choices.send_notice(
+                "Aidee v0.1.0-alpha.26 is installed.",
+                env_file=env_file,
+                requester=requester,
+            )
+            self.assertEqual(captured["token"], "test-token")
+            self.assertEqual(captured["method"], "sendMessage")
+            self.assertEqual(captured["payload"]["chat_id"], "4242")
+            self.assertEqual(
+                captured["payload"]["text"],
+                "Aidee v0.1.0-alpha.26 is installed.",
+            )
+            self.assertNotIn("reply_markup", payload)
+
+    def test_cli_sends_plain_notice_without_choices(self):
+        with mock.patch.object(telegram_choices, "send_notice") as send:
+            send.return_value = {}
+            with mock.patch(
+                "sys.argv",
+                [
+                    "send-telegram-choices.py",
+                    "--text",
+                    "Aidee v1 is installed.",
+                ],
+            ):
+                self.assertEqual(telegram_choices.main(), 0)
+            send.assert_called_once_with(
+                "Aidee v1 is installed.",
+                env_file=None,
+                chat_id=None,
+            )
+
     def test_cli_reads_notice_from_stdin(self):
         with mock.patch.object(telegram_choices, "send_choices") as send:
             send.return_value = {}
