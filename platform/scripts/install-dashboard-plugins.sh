@@ -58,14 +58,10 @@ enable_user_plugin() {
   if [[ ! -x "${hermes_binary}" ]]; then
     return 0
   fi
-  # The positional arguments expand inside the child shell.
-  # shellcheck disable=SC2016
   runuser -u "${AIDEE_CONTROLLER_USER}" -- \
     env HOME="${controller_home}" HERMES_HOME="${hermes_home}" \
-    bash -c 'printf "n\n" | "$1" plugins enable "$2"' \
-    "aidee-enable-${plugin_name}" \
-    "${hermes_binary}" \
-    "${plugin_name}"
+    "${hermes_binary}" plugins enable "${plugin_name}" \
+    --no-allow-tool-override
 }
 
 install_user_plugin "${fleet_source}" "aidee-fleet"

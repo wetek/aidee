@@ -5,7 +5,9 @@ import json
 import os
 import sys
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlparse
 
 import yaml
 
@@ -42,6 +44,20 @@ CONTAINER_UID = 10000
 CONTAINER_REPOS_ROOT = "/opt/data/aidee/repos"
 ONBOARDING_RELATIVE_PATH = Path("aidee/onboarding-status.json")
 ONBOARDING_PLUGIN = "aidee-onboarding"
+HOME_RESERVED_DIRECTORIES = {
+    "aidee",
+    "cache",
+    "cron",
+    "crons",
+    "knowledge",
+    "logs",
+    "memories",
+    "plugins",
+    "profiles",
+    "sessions",
+    "skills",
+    "skins",
+}
 COMPLETE_STEP_STATES = {"completed", "skipped"}
 STEP_STATES = COMPLETE_STEP_STATES | {"pending", "in_progress"}
 
@@ -74,6 +90,12 @@ def build_soul_document(assistant, owner):
         "same flow. Use `/opt/aidee/onboarding/mark-onboarding-step.py` for every",
         "completed or explicitly skipped step. Never infer external completion.",
         "When the gate returns `silent` or `complete`, do not ask again.",
+        "If required steps remain after `Resume now`, continue the first",
+        "incomplete required step. Do not greet.",
+        "The Telegram dashboard menu URL must equal `dashboard.public_url`",
+        "in `/opt/data/config.yaml`. Do not invent a Tailscale URL. Do not put",
+        "dashboard URLs in Telegram descriptions. Set descriptions for the",
+        "default profile and `language_code=en`.",
         "Preserve existing credentials and configuration.",
         "",
         "## Communication standards",
@@ -101,6 +123,86 @@ def build_soul_document(assistant, owner):
             ]
         )
     return "\n".join(sections) + "\n"
+
+
+def onboarding_plugin_source():
+    here = Path(__file__).resolve().parent
+    candidates = [
+        here.parent / "hermes-plugins" / ONBOARDING_PLUGIN,
+        Path(os.environ.get("AIDEE_SOURCE_ROOT", "/opt/aidee/source"))
+        / "platform/hermes-plugins"
+        / ONBOARDING_PLUGIN,
+    ]
+    for path in candidates:
+        if (path / "plugin.yaml").is_file():
+            return path
+    return None
+
+
+def install_onboarding_plugin_files(runtime_dir, uid=None, gid=None):
+    """Install the onboarding plugin under the assistant Hermes home."""
+    source = onboarding_plugin_source()
+    if source is None:
+        return []
+    destination = runtime_dir / "plugins" / ONBOARDING_PLUGIN
+    ensure_directory(destination, uid=uid, gid=gid)
+    changed = []
+    for item in sorted(source.iterdir()):
+        if not item.is_file() or item.name.endswith(".pyc"):
+            continue
+        target = destination / item.name
+        content = item.read_text()
+        if not target.is_file() or target.read_text() != content:
+            atomic_write(target, content, uid=uid, gid=gid)
+            changed.append(str(target))
+        ensure_file_metadata(target, uid=uid, gid=gid)
+    return changed
+
+
+def normalize_dashboard_url(url):
+    """Return an https origin with no path, query, or trailing slash."""
+    if not isinstance(url, str) or not url.strip():
+        raise RuntimeError("dashboard URL is required")
+    parsed = urlparse(url.strip())
+    if parsed.scheme != "https" or not parsed.hostname:
+        raise RuntimeError("dashboard URL must be an https origin")
+    if parsed.username or parsed.password:
+        raise RuntimeError("dashboard URL must not include user information")
+    if parsed.query or parsed.fragment:
+        raise RuntimeError("dashboard URL must not include query or fragment")
+    path = parsed.path or ""
+    if path not in {"", "/"}:
+        raise RuntimeError("dashboard URL must not include a path")
+    host = parsed.hostname.lower()
+    if parsed.port:
+        return f"https://{host}:{parsed.port}"
+    return f"https://{host}"
+
+
+def dashboard_hostname(url):
+    return urlparse(normalize_dashboard_url(url)).hostname
+
+
+def published_dashboard_url(assistant):
+    raw = (assistant.get("dashboard") or {}).get("url")
+    if not raw:
+        return None
+    return normalize_dashboard_url(raw)
+
+
+def apply_published_dashboard_url(config, url):
+    """Set dashboard.public_url. Return True when the file needs a write."""
+    if not isinstance(config, dict):
+        raise RuntimeError("assistant config is not a mapping")
+    normalized = normalize_dashboard_url(url)
+    dashboard = config.get("dashboard")
+    if not isinstance(dashboard, dict):
+        dashboard = {}
+        config["dashboard"] = dashboard
+    if dashboard.get("public_url") == normalized:
+        return False
+    dashboard["public_url"] = normalized
+    return True
 
 
 def enable_onboarding_plugin(config):
@@ -215,6 +317,85 @@ def ensure_file_metadata(path, uid=None, gid=None, mode=0o660):
         pass
 
 
+def _is_git_checkout(path):
+    return path.is_dir() and not path.is_symlink() and (path / ".git").exists()
+
+
+def _unique_directory(parent, name):
+    candidate = parent / name
+    if not candidate.exists():
+        return candidate
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    candidate = parent / f"{name}.{stamp}"
+    if not candidate.exists():
+        return candidate
+    index = 2
+    while True:
+        candidate = parent / f"{name}.{stamp}.{index}"
+        if not candidate.exists():
+            return candidate
+        index += 1
+
+
+def _remove_empty_parents(path, stop):
+    current = path
+    while current != stop:
+        if not current.is_dir() or current.is_symlink():
+            return
+        try:
+            next(current.iterdir())
+            return
+        except StopIteration:
+            parent = current.parent
+            current.rmdir()
+            current = parent
+
+
+def legacy_home_git_checkouts(runtime_dir):
+    """Return git checkouts that do not belong in the assistant Hermes home."""
+    found = []
+    if not runtime_dir.is_dir():
+        return found
+    for item in sorted(runtime_dir.iterdir()):
+        if item.name.startswith(".") or item.name in HOME_RESERVED_DIRECTORIES:
+            continue
+        if item.is_symlink() or not item.is_dir():
+            continue
+        if _is_git_checkout(item):
+            found.append(item)
+            continue
+        try:
+            children = sorted(item.iterdir())
+        except OSError:
+            continue
+        for child in children:
+            if child.is_symlink() or not child.is_dir():
+                continue
+            if _is_git_checkout(child):
+                found.append(child)
+    return found
+
+
+def relocate_legacy_home_repos(runtime_dir, uid=None, gid=None):
+    """Move leftover home-directory clones under aidee/repos without deleting them."""
+    changed = []
+    repos = runtime_dir / "aidee" / "repos"
+    ensure_directory(repos, uid=uid, gid=gid)
+    for source in legacy_home_git_checkouts(runtime_dir):
+        if source.is_symlink():
+            raise RuntimeError(f"refusing to relocate symlink checkout: {source}")
+        destination = repos / source.name
+        if destination.exists() or destination == source:
+            legacy = runtime_dir / "aidee" / "legacy-home-repos"
+            ensure_directory(legacy, uid=uid, gid=gid)
+            destination = _unique_directory(legacy, source.name)
+        parent = source.parent
+        source.rename(destination)
+        _remove_empty_parents(parent, runtime_dir)
+        changed.append(str(destination))
+    return changed
+
+
 def reconcile_dashboard_branding(assistant, runtime_dir, uid=None, gid=None):
     """Converge local display configuration without replacing owner settings."""
     changed = []
@@ -235,7 +416,11 @@ def reconcile_dashboard_branding(assistant, runtime_dir, uid=None, gid=None):
     display_changed = display.get("skin") != assistant["id"]
     if display_changed:
         display["skin"] = assistant["id"]
-    if display_changed or plugin_changed:
+    published = published_dashboard_url(assistant)
+    origin_changed = False
+    if published:
+        origin_changed = apply_published_dashboard_url(config, published)
+    if display_changed or plugin_changed or origin_changed:
         atomic_write(
             config_path,
             yaml.safe_dump(config, sort_keys=False),
@@ -243,6 +428,28 @@ def reconcile_dashboard_branding(assistant, runtime_dir, uid=None, gid=None):
             gid=gid,
         )
         changed.append(str(config_path))
+
+    profile_config = runtime_dir / "profiles/default/config.yaml"
+    if profile_config.is_file():
+        try:
+            profile = yaml.safe_load(profile_config.read_text()) or {}
+        except yaml.YAMLError as error:
+            raise RuntimeError(
+                f"assistant profile config is invalid: {profile_config}"
+            ) from error
+        profile_changed = False
+        if isinstance(profile, dict):
+            profile_changed = enable_onboarding_plugin(profile)
+            if published and apply_published_dashboard_url(profile, published):
+                profile_changed = True
+        if profile_changed:
+            atomic_write(
+                profile_config,
+                yaml.safe_dump(profile, sort_keys=False),
+                uid=uid,
+                gid=gid,
+            )
+            changed.append(str(profile_config))
 
     skin_path = runtime_dir / "skins" / f"{assistant['id']}.yaml"
     try:
@@ -354,11 +561,15 @@ def reconcile_assistant_files(
         assistant, runtime_dir, uid=uid, gid=gid
     )
     changed.extend(branding_changes)
+    changed.extend(
+        install_onboarding_plugin_files(runtime_dir, uid=uid, gid=gid)
+    )
     skin = runtime_dir / "skins" / f"{assistant['id']}.yaml"
     ensure_file_metadata(skin, uid=uid, gid=gid)
 
     repos = runtime_dir / "aidee" / "repos"
     ensure_directory(repos, uid=uid, gid=gid)
+    changed.extend(relocate_legacy_home_repos(runtime_dir, uid=uid, gid=gid))
 
     status_path = runtime_dir / ONBOARDING_RELATIVE_PATH
     try:

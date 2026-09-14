@@ -23,10 +23,10 @@ class AdminHelperTests(unittest.TestCase):
         image_id = "sha256:" + "a" * 64
         image_dir = state_root / "runtime" / "images"
         image_dir.mkdir(parents=True)
-        (image_dir / "v0.1.0-alpha.17.json").write_text(
+        (image_dir / "v0.1.0-alpha.18.json").write_text(
             json.dumps(
                 {
-                    "aidee_version": "v0.1.0-alpha.17",
+                    "aidee_version": "v0.1.0-alpha.18",
                     "image_id": image_id,
                     "source_commit": "testcommit",
                     "validation": "validated",
@@ -73,7 +73,7 @@ class AdminHelperTests(unittest.TestCase):
                 if command[:3] == ["docker", "image", "inspect"]:
                     if "org.opencontainers.image.revision" in command[-1]:
                         return "testcommit"
-                    return "v0.1.0-alpha.17"
+                    return "v0.1.0-alpha.18"
                 if command[:3] == ["git", "-C", str(ROOT)]:
                     return "testcommit"
                 if command[:2] == ["docker", "ps"]:
@@ -305,7 +305,7 @@ class AdminHelperTests(unittest.TestCase):
                 if command[:3] == ["docker", "image", "inspect"]:
                     if "org.opencontainers.image.revision" in command[-1]:
                         return "testcommit"
-                    return "v0.1.0-alpha.17"
+                    return "v0.1.0-alpha.18"
                 if command[:3] == ["git", "-C", str(ROOT)]:
                     return "testcommit"
                 if command[:2] == ["docker", "ps"]:
@@ -405,7 +405,7 @@ class AdminHelperTests(unittest.TestCase):
                 if command[:3] == ["docker", "image", "inspect"]:
                     if "org.opencontainers.image.revision" in command[-1]:
                         return "testcommit"
-                    return "v0.1.0-alpha.17"
+                    return "v0.1.0-alpha.18"
                 if command[:3] == ["git", "-C", str(ROOT)]:
                     return "testcommit"
                 if command[:2] == ["docker", "ps"]:
@@ -494,7 +494,7 @@ class AdminHelperTests(unittest.TestCase):
                 if command[:3] == ["docker", "image", "inspect"]:
                     if "org.opencontainers.image.revision" in command[-1]:
                         return "testcommit"
-                    return "v0.1.0-alpha.17"
+                    return "v0.1.0-alpha.18"
                 if command[:3] == ["git", "-C", str(ROOT)]:
                     return "testcommit"
                 if command[:2] == ["docker", "ps"]:
@@ -565,6 +565,12 @@ class AdminHelperTests(unittest.TestCase):
                 "aidee-onboarding",
                 config_data.get("plugins", {}).get("enabled", []),
             )
+            self.assertTrue(
+                (runtime_dir / "plugins/aidee-onboarding/plugin.yaml").is_file()
+            )
+            self.assertTrue(
+                (runtime_dir / "plugins/aidee-onboarding/__init__.py").is_file()
+            )
             self.assertEqual(
                 telegram_cfg.get("home_channel"),
                 {
@@ -596,7 +602,7 @@ class AdminHelperTests(unittest.TestCase):
                 if command[:3] == ["docker", "image", "inspect"]:
                     if "org.opencontainers.image.revision" in command[-1]:
                         return "testcommit"
-                    return "v0.1.0-alpha.17"
+                    return "v0.1.0-alpha.18"
                 if command[:3] == ["git", "-C", str(ROOT)]:
                     return "testcommit"
                 if command[:2] == ["docker", "ps"]:
@@ -661,6 +667,82 @@ class AdminHelperTests(unittest.TestCase):
                     "name": "Example Owner",
                     "user_id": "987654321",
                 },
+            )
+
+    def test_sets_published_dashboard_origin(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            state_root = Path(temporary_directory)
+            self.create_state(state_root)
+            registry_path = state_root / "fleet" / "registry.yaml"
+            registry = yaml.safe_load(registry_path.read_text())
+            registry["assistants"].append(
+                {
+                    "id": "control-tower",
+                    "name": "Control Tower",
+                    "kind": "coding",
+                    "status": "active",
+                    "platform_version": "0.1.0",
+                    "state_path": "assistants/control-tower",
+                    "container_name": "aidee-control-tower",
+                    "dashboard": {
+                        "host_port": 9202,
+                        "tailscale_https_port": 8444,
+                        "url": "https://old.example.ts.net:8444",
+                    },
+                    "resources": {
+                        "cpu_limit": 0.75,
+                        "memory_mb": 2048,
+                        "storage_gb": 20,
+                        "pids_limit": 512,
+                    },
+                    "image": {
+                        "aidee_version": "v0.1.0-alpha.18",
+                        "image_id": "sha256:" + "a" * 64,
+                    },
+                }
+            )
+            registry_path.write_text(yaml.safe_dump(registry, sort_keys=False))
+            runtime = (
+                state_root / "runtime" / "assistants" / "control-tower" / "data"
+            )
+            runtime.mkdir(parents=True)
+            (runtime / "config.yaml").write_text(
+                "dashboard:\n  public_url: https://old.example.ts.net:8444\n"
+            )
+            request = {
+                "schema_version": 1,
+                "request_id": "set-origin-control-tower",
+                "owner_approved": True,
+                "operation": "set_dashboard_origin",
+                "assistant_id": "control-tower",
+                "dashboard_url": "https://control-tower.example.test/",
+            }
+            with (
+                mock.patch.object(aidee_admin, "STATE_ROOT", state_root),
+                mock.patch.object(aidee_admin, "SOURCE_ROOT", ROOT),
+                mock.patch.object(
+                    aidee_admin,
+                    "controller_identity",
+                    return_value=(os.getuid(), os.getgid()),
+                ),
+                mock.patch.object(aidee_admin.os, "chown"),
+            ):
+                result = aidee_admin.execute(request)
+
+            self.assertEqual(result["status"], "updated")
+            self.assertEqual(
+                result["dashboard_url"], "https://control-tower.example.test"
+            )
+            updated_registry = yaml.safe_load(registry_path.read_text())
+            dashboard = updated_registry["assistants"][0]["dashboard"]
+            self.assertEqual(
+                dashboard["url"], "https://control-tower.example.test"
+            )
+            self.assertEqual(dashboard["hostname"], "control-tower.example.test")
+            config = yaml.safe_load((runtime / "config.yaml").read_text())
+            self.assertEqual(
+                config["dashboard"]["public_url"],
+                "https://control-tower.example.test",
             )
 
     def test_upserts_env_values_without_dropping_other_keys(self):
@@ -944,7 +1026,7 @@ class AdminHelperTests(unittest.TestCase):
                     if command[:3] == ["docker", "image", "inspect"]:
                         if "org.opencontainers.image.revision" in command[-1]:
                             return "testcommit"
-                        return "v0.1.0-alpha.17"
+                        return "v0.1.0-alpha.18"
                     if command[:3] == ["git", "-C", str(ROOT)]:
                         return "testcommit"
                     if command[:2] == ["docker", "ps"]:

@@ -76,6 +76,32 @@ def offer_context(role, assistant_kind, first_step):
     )
 
 
+def continue_context(role, assistant_kind, first_step):
+    step = first_step or "the first incomplete required step"
+    return (
+        "AIDEE ONBOARDING CONTINUE. The owner already chose Resume now. "
+        f"Required setup is still incomplete. The current step is {step}. "
+        "Do not greet. Continue that step now. "
+        "The Telegram dashboard menu URL must equal dashboard.public_url "
+        "in config.yaml. Do not invent a Tailscale URL. "
+        "Set Telegram descriptions for the default profile and language_code en. "
+        "Do not put dashboard URLs in bio or description."
+    )
+
+
+def should_inject(result):
+    if not isinstance(result, dict):
+        return False
+    if result.get("decision") == "offer":
+        return True
+    rollup = result.get("rollup") or {}
+    prompt = result.get("prompt") or {}
+    if not rollup.get("incomplete_required"):
+        return False
+    response = prompt.get("response")
+    return response is None or response == "resume_now"
+
+
 def on_pre_llm_call(**_kwargs):
     try:
         target = resolve_target()
@@ -86,13 +112,15 @@ def on_pre_llm_call(**_kwargs):
         if gate is None:
             return None
         result = gate(path, role, assistant_kind=kind, action="inspect")
-        if result.get("decision") != "offer":
+        if not should_inject(result):
             return None
-        return {
-            "context": offer_context(
-                role, kind, result.get("first_incomplete_required")
-            )
-        }
+        prompt = result.get("prompt") or {}
+        first = result.get("first_incomplete_required")
+        if prompt.get("response") == "resume_now":
+            context = continue_context(role, kind, first)
+        else:
+            context = offer_context(role, kind, first)
+        return {"context": context}
     except Exception:
         return None
 

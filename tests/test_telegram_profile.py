@@ -88,6 +88,24 @@ class TelegramProfileTests(unittest.TestCase):
             self.assertIn("setMyName", methods)
             self.assertIn("setChatMenuButton", methods)
             self.assertIn("getChatMenuButton", methods)
+            short_sets = [
+                payload
+                for method, payload in client.calls
+                if method == "setMyShortDescription"
+            ]
+            self.assertEqual(len(short_sets), 2)
+            self.assertEqual(
+                {payload.get("language_code") for payload in short_sets},
+                {None, "en"},
+            )
+
+    def test_menu_urls_match_ignores_trailing_slash(self):
+        self.assertTrue(
+            telegram_profile.menu_urls_match(
+                "https://control-tower.example.test/",
+                "https://control-tower.example.test",
+            )
+        )
 
     def test_marks_profile_as_applied(self):
         with tempfile.TemporaryDirectory() as temporary_directory:

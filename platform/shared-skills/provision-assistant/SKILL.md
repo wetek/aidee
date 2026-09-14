@@ -72,7 +72,11 @@ For Telegram and Bot Identity:
 1. Ask the owner to create a separate bot through BotFather.
 2. Ask them to enter the token in the assistant dashboard.
 3. Use DM pairing for owner access.
-4. Configure the Telegram Chat Menu Button (`setChatMenuButton`) pointing to the instance dashboard URL (`dashboard.public_url`).
+4. Configure the Telegram Chat Menu Button (`setChatMenuButton`) pointing to
+   `dashboard.public_url` in the assistant `config.yaml`. That URL is Tailscale
+   by default, or a custom HTTPS origin if the owner recorded one. Never invent
+   a Tailscale host. Set descriptions for the default profile and
+   `language_code=en`. Do not put dashboard URLs in bio text.
 5. Respect Telegram platform limits: custom-port URLs (e.g. `:8444`) do not linkify in iOS bios; rely on the fixed Chat Menu Button and native Mini App card instead of raw URLs in bio text.
 6. When repositories are connected, inspect brand assets (`public/brand/*`) and proactively offer to set the Telegram bot profile photo.
 7. Test one harmless response.

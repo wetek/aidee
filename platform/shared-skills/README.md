@@ -12,6 +12,8 @@ Reusable Hermes skills that every assistant may receive.
 
 `provision-assistant/SKILL.md` creates and validates isolated Aidee assistants through the narrow administration helper.
 
+`controller-dashboard-origin/SKILL.md` records the published HTTPS origin for one assistant dashboard when the owner chooses Tailscale or a custom hostname.
+
 ## Matt Pocock engineering workflows
 
 Bundled engineering discipline skills installed for coding and project assistants:

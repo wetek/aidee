@@ -19,3 +19,6 @@ The controller mounts approved paths into only that assistant's container. It ne
 
 Each assistant also receives a private runtime directory at
 `/opt/data/aidee/repos`. Coding agents store all cloned repositories there.
+Fleet updates relocate leftover git checkouts from the assistant Hermes home
+into that directory. A colliding name is moved to
+`/opt/data/aidee/legacy-home-repos` instead of overwritten.

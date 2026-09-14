@@ -9,6 +9,7 @@ The unprivileged Aidee controller will receive narrow tools for:
 - Committing approved private fleet state when Git backup is enabled.
 - Backing up and restoring non-Git state.
 - Applying and verifying approved Telegram bot branding.
+- Recording the published HTTPS origin for an assistant dashboard.
 - Recording verified Telegram owner and dashboard access.
 - Creating the owner-approved daily Aidee update check and fleet health watchdog crons.
 - Drafting a pre-filled GitHub issue URL for owner-approved Aidee feedback.

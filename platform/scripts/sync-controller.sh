@@ -84,7 +84,7 @@ fi
 if [[ ! -d "${target}/.git" ]]; then
   temporary="$(mktemp -d "${releases_dir}/.${release}.XXXXXX")"
   trap 'rm -rf "${temporary}"' EXIT
-  git clone \
+  git -c advice.detachedHead=false clone \
     --branch "${release}" \
     --depth 1 \
     "${AIDEE_REPOSITORY}" \
@@ -176,13 +176,9 @@ install_controller_plugin \
 
 hermes_binary="${HOME}/.local/bin/hermes"
 if [[ -x "${hermes_binary}" ]]; then
-  # The positional arguments expand inside the child shell.
-  # shellcheck disable=SC2016
   env HERMES_HOME="${HERMES_HOME}" \
-    bash -c 'printf "n\n" | "$1" plugins enable "$2"' \
-    aidee-enable-onboarding \
-    "${hermes_binary}" \
-    aidee-onboarding
+    "${hermes_binary}" plugins enable aidee-onboarding \
+    --no-allow-tool-override
 fi
 
 ln -sfn "releases/${release}" "${upstream_dir}/current"

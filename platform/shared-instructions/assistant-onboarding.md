@@ -12,7 +12,15 @@ These rules govern how Aidee assistants handle first-boot identity setup, Telegr
   with `Resume now` and `Not now`. Do not greet first. Record the answer with
   `--mode resume-now` or `--mode not-now`.
 - Resume the first incomplete required step only after `Resume now`. Offer
-  optional steps inside that resumed flow.
+  optional steps inside that resumed flow. If a later greeting happens while
+  required steps remain after `Resume now`, continue that step. Do not greet.
+- The Telegram Chat Menu Button URL must equal `dashboard.public_url` in
+  `/opt/data/config.yaml`. That value is the published origin for this
+  assistant. It may be Tailscale or a custom HTTPS hostname. Never invent a
+  Tailscale URL. Never copy the current Telegram button if it disagrees with
+  `public_url`.
+- Set `setMyShortDescription` and `setMyDescription` for the default profile
+  and for `language_code=en`. Do not put dashboard URLs in either field.
 - Use `/opt/aidee/onboarding/mark-onboarding-step.py` to record every step as
   `completed` or explicitly `skipped`. A skip requires owner confirmation and
   a reason.
@@ -31,7 +39,9 @@ These rules govern how Aidee assistants handle first-boot identity setup, Telegr
 
 When an assistant boots or connects to Telegram for the first time:
 
-1. **Dashboard Menu Button:** Automatically configure the Telegram Chat Menu Button (`setChatMenuButton`) pointing to the instance dashboard URL (`dashboard.public_url` in `config.yaml`). This provides the owner with immediate, one-tap mobile access to their dashboard.
+1. **Dashboard Menu Button:** Set `setChatMenuButton` to
+   `dashboard.public_url` in `config.yaml`. Use that exact origin for the
+   default chat and the owner chat. Do not substitute a Tailscale host.
 2. **Telegram Platform Awareness:**
    - URLs with custom ports (such as `:8444` or `:8443`) are treated as plain text and are not clickable hyperlinks in Telegram bio/about fields (`short_description`) on iOS and other mobile clients.
    - Do not clutter bio text with unclickable custom-port URLs.

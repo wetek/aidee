@@ -18,7 +18,9 @@ Aidee adds:
 - Versioned Aidee skills, instructions, workflows, and defaults.
 - Durable onboarding gate and evidence-marking commands under
   `/opt/aidee/onboarding`.
-- Hermes plugin `aidee-onboarding` under `/opt/hermes/plugins`.
+- Hermes plugin `aidee-onboarding` under `/opt/hermes/plugins`. Reconcile
+  also installs it under each assistant's Hermes home at
+  `/opt/data/plugins/aidee-onboarding` and enables it in `config.yaml`.
 
 The image contains no assistant identity, memory, repository, or credential.
 

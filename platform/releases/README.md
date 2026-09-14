@@ -49,4 +49,8 @@ required setup is still incomplete.
 `v0.1.0-alpha.17` prints numbered apply steps and streams the long image
 build so a fleet update does not look idle.
 
+`v0.1.0-alpha.18` installs the onboarding plugin in the assistant Hermes
+home, records a per-dashboard HTTPS origin, and relocates leftover git
+checkouts under `/opt/data/aidee/repos`.
+
 

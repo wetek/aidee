@@ -1,7 +1,7 @@
 # Aidee project status
 
 Status: first VPS pilot in progress
-Release: `v0.1.0-alpha.17`
+Release: `v0.1.0-alpha.18`
 
 ## Goal
 
@@ -19,7 +19,9 @@ Prove that an owner can use the Aidee setup guide to install a private fleet of 
 - Validated non-secret setup plans.
 - Resumable host and controller setup through `setup.sh`.
 - Durable controller and assistant onboarding with one-time resume decisions
-  and a Hermes plugin that injects the offer before a greeting.
+  and a Hermes plugin that injects the offer before a greeting until the owner
+  answers. A published HTTPS origin per assistant dashboard is stored in the
+  fleet registry and `config.yaml`. Telegram menu buttons copy that URL.
 - Approved Telegram profile and avatar updates through the Bot API.
 - Telegram owner and phone dashboard completion markers.
 - Evidence-gated completed or owner-confirmed skipped step states.

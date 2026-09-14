@@ -84,7 +84,8 @@ then
   if [[ "${candidate_root}" != "${release_dir}" ]]; then
     install -d -m 0755 -o root -g root /opt/aidee/releases
     if [[ ! -e "${release_dir}" ]]; then
-      git clone --local --branch "${release}" "${candidate_root}" "${release_dir}"
+      git -c advice.detachedHead=false clone \
+        --local --branch "${release}" "${candidate_root}" "${release_dir}"
     fi
   fi
 else
@@ -95,7 +96,7 @@ if [[ ! -d "${release_dir}/.git" ]]; then
   echo "Fetching Aidee ${release}..."
   temporary="/opt/aidee/releases/.${release}.$$"
   trap 'rm -rf "${temporary}"' EXIT
-  git clone \
+  git -c advice.detachedHead=false clone \
     --branch "${release}" \
     --depth 1 \
     "${AIDEE_REPOSITORY}" \

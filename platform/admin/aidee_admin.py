@@ -19,10 +19,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from assistant_state import (
     CONTAINER_UID,
     ONBOARDING_PLUGIN,
+    apply_published_dashboard_url,
     build_soul_document,
+    dashboard_hostname,
     default_assistant_config,
     default_onboarding_status,
+    install_onboarding_plugin_files,
     mark_step,
+    normalize_dashboard_url,
 )
 
 
@@ -387,6 +391,9 @@ def create_assistant_state(assistant, image_id, dashboard_url):
         yaml.safe_dump(runtime_config, sort_keys=False),
         CONTAINER_UID,
         controller_gid,
+    )
+    install_onboarding_plugin_files(
+        runtime_dir, uid=CONTAINER_UID, gid=controller_gid
     )
     write_text(
         runtime_dir / "aidee/onboarding-status.json",
@@ -830,6 +837,80 @@ def registered_assistant(assistant_id):
     raise AdminError(f"assistant is not registered: {assistant_id}")
 
 
+def set_dashboard_origin(request):
+    """Record the published HTTPS origin for one assistant dashboard."""
+    assistant_id = safe_assistant_id(request["assistant_id"])
+    try:
+        url = normalize_dashboard_url(request["dashboard_url"])
+        hostname = dashboard_hostname(url)
+    except RuntimeError as error:
+        raise AdminError(str(error)) from error
+    registry_path = STATE_ROOT / "fleet/registry.yaml"
+    registry = yaml.safe_load(registry_path.read_text())
+    found = None
+    for item in registry.get("assistants") or []:
+        if item.get("id") == assistant_id:
+            found = item
+            break
+    if found is None:
+        raise AdminError(f"assistant is not registered: {assistant_id}")
+    dashboard = found.setdefault("dashboard", {})
+    if not isinstance(dashboard, dict):
+        raise AdminError(f"assistant dashboard is invalid: {assistant_id}")
+    dashboard["url"] = url
+    dashboard["hostname"] = hostname
+    controller_uid, controller_gid = controller_identity()
+    write_text(
+        registry_path,
+        yaml.safe_dump(registry, sort_keys=False),
+        controller_uid,
+        controller_gid,
+    )
+    runtime_dir = assistant_runtime_dir(assistant_id)
+    config_path = runtime_dir / "config.yaml"
+    try:
+        config = yaml.safe_load(config_path.read_text()) or {}
+    except FileNotFoundError:
+        config = {}
+    except yaml.YAMLError as error:
+        raise AdminError(f"assistant config is invalid: {config_path}") from error
+    if not isinstance(config, dict):
+        raise AdminError(f"assistant config is not a mapping: {config_path}")
+    apply_published_dashboard_url(config, url)
+    write_text(
+        config_path,
+        yaml.safe_dump(config, sort_keys=False),
+        CONTAINER_UID,
+        controller_gid,
+    )
+    profile_path = runtime_dir / "profiles/default/config.yaml"
+    if profile_path.is_file():
+        try:
+            profile = yaml.safe_load(profile_path.read_text()) or {}
+        except yaml.YAMLError as error:
+            raise AdminError(
+                f"assistant profile config is invalid: {profile_path}"
+            ) from error
+        if isinstance(profile, dict) and apply_published_dashboard_url(profile, url):
+            write_text(
+                profile_path,
+                yaml.safe_dump(profile, sort_keys=False),
+                CONTAINER_UID,
+                controller_gid,
+            )
+    return {
+        "status": "updated",
+        "assistant_id": assistant_id,
+        "dashboard_url": url,
+        "next_action": (
+            "Ask that assistant to set the Telegram menu button to "
+            "dashboard.public_url for the default chat and this owner chat. "
+            "Set descriptions for the default profile and language_code en. "
+            "Do not put dashboard URLs in Telegram descriptions."
+        ),
+    }
+
+
 def upsert_env(text, updates):
     seen = set()
     lines = []
@@ -1026,6 +1107,8 @@ def execute(request):
         return reset_dashboard_password(request["assistant_id"])
     if operation == "set_dashboard_credentials":
         return set_dashboard_credentials(request)
+    if operation == "set_dashboard_origin":
+        return set_dashboard_origin(request)
     if operation in {
         "start_assistant",
         "stop_assistant",

@@ -19,6 +19,7 @@ from onboarding_state import (  # noqa: E402
 
 
 COMMAND = re.compile(r"^[a-z0-9_]{1,32}$")
+DESCRIPTION_LANGUAGE_CODES = ("", "en")
 PROFILE_KEYS = {
     "schema_version",
     "name",
@@ -122,6 +123,20 @@ def load_profile(path, avatar_root):
     return profile
 
 
+def menu_urls_match(left, right):
+    def cleaned(url):
+        return (url or "").strip().rstrip("/").lower()
+
+    return cleaned(left) == cleaned(right)
+
+
+def description_payload(field, value, language_code):
+    payload = {field: value}
+    if language_code:
+        payload["language_code"] = language_code
+    return payload
+
+
 def read_env_value(path, key):
     try:
         lines = path.read_text().splitlines()
@@ -206,14 +221,23 @@ class TelegramClient:
 
 def apply_profile(client, profile):
     client.request("setMyName", {"name": profile["name"]})
-    client.request(
-        "setMyShortDescription",
-        {"short_description": profile["short_description"]},
-    )
-    client.request(
-        "setMyDescription",
-        {"description": profile["description"]},
-    )
+    for language_code in DESCRIPTION_LANGUAGE_CODES:
+        client.request(
+            "setMyShortDescription",
+            description_payload(
+                "short_description",
+                profile["short_description"],
+                language_code,
+            ),
+        )
+        client.request(
+            "setMyDescription",
+            description_payload(
+                "description",
+                profile["description"],
+                language_code,
+            ),
+        )
     client.request("setMyCommands", {"commands": profile["commands"]})
     client.upload_avatar(profile["avatar_path"])
 
@@ -232,16 +256,24 @@ def apply_profile(client, profile):
 def verify_profile(client, profile):
     if client.request("getMyName").get("name") != profile["name"]:
         raise ProfileError("Telegram bot name verification failed")
-    if (
-        client.request("getMyShortDescription").get("short_description")
-        != profile["short_description"]
-    ):
-        raise ProfileError("Telegram short description verification failed")
-    if (
-        client.request("getMyDescription").get("description")
-        != profile["description"]
-    ):
-        raise ProfileError("Telegram description verification failed")
+    for language_code in DESCRIPTION_LANGUAGE_CODES:
+        short_query = {}
+        long_query = {}
+        if language_code:
+            short_query["language_code"] = language_code
+            long_query["language_code"] = language_code
+        if (
+            client.request("getMyShortDescription", short_query).get(
+                "short_description"
+            )
+            != profile["short_description"]
+        ):
+            raise ProfileError("Telegram short description verification failed")
+        if (
+            client.request("getMyDescription", long_query).get("description")
+            != profile["description"]
+        ):
+            raise ProfileError("Telegram description verification failed")
     if client.request("getMyCommands") != profile["commands"]:
         raise ProfileError("Telegram command verification failed")
 
@@ -257,7 +289,9 @@ def verify_profile(client, profile):
     expected_type = "web_app" if menu["enabled"] else "commands"
     if actual_menu.get("type") != expected_type:
         raise ProfileError("Telegram menu button verification failed")
-    if menu["enabled"] and actual_menu.get("web_app", {}).get("url") != menu["url"]:
+    if menu["enabled"] and not menu_urls_match(
+        actual_menu.get("web_app", {}).get("url"), menu["url"]
+    ):
         raise ProfileError("Telegram dashboard menu URL verification failed")
 
 

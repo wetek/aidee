@@ -223,6 +223,7 @@ class FleetUpdateTests(unittest.TestCase):
                 [
                     "001_alpha13_onboarding_registry",
                     "002_alpha14_onboarding_status",
+                    "003_alpha18_relocate_home_repos",
                 ],
             )
             self.assertEqual(second, [])
@@ -315,6 +316,9 @@ class FleetUpdateTests(unittest.TestCase):
                 "aidee-onboarding",
                 repaired_config["plugins"]["enabled"],
             )
+            self.assertTrue(
+                (runtime / "plugins/aidee-onboarding/plugin.yaml").is_file()
+            )
             self.assertEqual(env.read_text(), "TOKEN=preserved\n")
             self.assertTrue((runtime / "aidee/repos").is_dir())
             self.assertEqual((runtime / "aidee/repos").stat().st_mode & 0o777, 0o770)
@@ -342,8 +346,66 @@ class FleetUpdateTests(unittest.TestCase):
                 "Software engineering standards",
                 "first incomplete",
                 "including greetings",
+                "dashboard.public_url",
             ):
                 self.assertIn(expected, soul)
+
+    def test_reconciliation_copies_registry_dashboard_url_into_config(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fleet = Path(temporary) / "fleet/assistants/pilot"
+            runtime = Path(temporary) / "runtime/assistants/pilot/data"
+            fleet.mkdir(parents=True)
+            runtime.mkdir(parents=True)
+            config = runtime / "config.yaml"
+            config.write_text(
+                "model: owner-selected\ndashboard:\n  public_url: https://old.example.ts.net:8444\n"
+            )
+            assistant = legacy_registry()["assistants"][0]
+            assistant["dashboard"]["url"] = "https://pilot.example.test/"
+            with mock.patch("os.chown"):
+                assistant_state.reconcile_assistant_files(
+                    assistant,
+                    "Test Owner",
+                    fleet,
+                    runtime,
+                    gid=os.getgid(),
+                )
+            repaired = yaml.safe_load(config.read_text())
+            self.assertEqual(
+                repaired["dashboard"]["public_url"],
+                "https://pilot.example.test",
+            )
+            self.assertEqual(repaired["model"], "owner-selected")
+
+    def test_reconciliation_relocates_home_git_checkouts_into_aidee_repos(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fleet = Path(temporary) / "fleet/assistants/pilot"
+            runtime = Path(temporary) / "runtime/assistants/pilot/data"
+            fleet.mkdir(parents=True)
+            runtime.mkdir(parents=True)
+            leftover = runtime / "control-tower"
+            leftover.mkdir()
+            (leftover / ".git").mkdir()
+            (leftover / "README.md").write_text("old clone\n")
+            duplicate = runtime / "workspace" / "other"
+            duplicate.mkdir(parents=True)
+            (duplicate / ".git").mkdir()
+            existing = runtime / "aidee" / "repos" / "other"
+            existing.mkdir(parents=True)
+            (existing / "kept.txt").write_text("canonical\n")
+            with mock.patch("os.chown"):
+                assistant_state.relocate_legacy_home_repos(
+                    runtime, gid=os.getgid()
+                )
+            self.assertFalse(leftover.exists())
+            self.assertTrue(
+                (runtime / "aidee/repos/control-tower/README.md").is_file()
+            )
+            self.assertTrue((existing / "kept.txt").is_file())
+            legacy = list((runtime / "aidee/legacy-home-repos").iterdir())
+            self.assertEqual(len(legacy), 1)
+            self.assertTrue((legacy[0] / ".git").exists())
+            self.assertFalse((runtime / "workspace").exists())
 
     def test_reconciliation_rejects_assistant_controlled_directory_symlink(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -559,6 +621,25 @@ class FleetUpdateTests(unittest.TestCase):
             [sys.executable, "-c", "raise SystemExit(0)"], stream=True
         )
         self.assertEqual(result.returncode, 0)
+
+    def test_captured_commands_do_not_inherit_the_terminal(self):
+        with mock.patch("subprocess.run") as run:
+            run.return_value = subprocess.CompletedProcess(["true"], 0, "", "")
+            reconcile.Runner().run(["true"])
+        kwargs = run.call_args.kwargs
+        self.assertTrue(kwargs.get("capture_output"))
+        self.assertEqual(kwargs.get("stdin"), subprocess.DEVNULL)
+
+    def test_plugin_enable_skips_the_tool_override_prompt(self):
+        install = (
+            ROOT / "platform/scripts/install-dashboard-plugins.sh"
+        ).read_text()
+        sync = (ROOT / "platform/scripts/sync-controller.sh").read_text()
+        self.assertIn("plugins enable", install)
+        self.assertIn("--no-allow-tool-override", install)
+        self.assertNotIn('printf "n\\n"', install)
+        self.assertIn("--no-allow-tool-override", sync)
+        self.assertNotIn('printf "n\\n"', sync)
 
 
 if __name__ == "__main__":

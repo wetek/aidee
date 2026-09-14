@@ -33,7 +33,12 @@ class Runner:
             if check and result.returncode:
                 raise ReconcileError(f"{command[0]} failed")
             return result
-        result = subprocess.run(command, capture_output=True, text=True)
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            stdin=subprocess.DEVNULL,
+        )
         if check and result.returncode:
             detail = result.stderr.strip() or result.stdout.strip()
             raise ReconcileError(f"{command[0]} failed: {detail}")
@@ -936,6 +941,21 @@ def verify(
         )
         if plugin.returncode:
             failures.append(f"onboarding plugin missing: {assistant_id}")
+        user_plugin = runner.run(
+            [
+                "docker",
+                "exec",
+                name,
+                "test",
+                "-f",
+                "/opt/data/plugins/aidee-onboarding/plugin.yaml",
+            ],
+            check=False,
+        )
+        if user_plugin.returncode:
+            failures.append(
+                f"onboarding plugin is not installed in Hermes home: {assistant_id}"
+            )
         fleet_dir = safe_state_path(
             state_root / "fleet",
             assistant.get("state_path") or f"assistants/{assistant_id}",
@@ -1075,12 +1095,21 @@ def main():
         stream=True,
     )
     reporter.next()
-    runner.run([str(source / "platform/scripts/install-admin-helper.sh")])
-    runner.run([str(source / "platform/scripts/install-dashboard-plugins.sh")])
-    runner.run([str(source / "platform/scripts/install-controller-service.sh")])
+    runner.run(
+        [str(source / "platform/scripts/install-admin-helper.sh")],
+        stream=True,
+    )
+    runner.run(
+        [str(source / "platform/scripts/install-dashboard-plugins.sh")],
+        stream=True,
+    )
+    runner.run(
+        [str(source / "platform/scripts/install-controller-service.sh")],
+        stream=True,
+    )
     gateway_installer = source / "platform/scripts/install-controller-gateway.sh"
     if gateway_installer.is_file():
-        runner.run([str(gateway_installer)])
+        runner.run([str(gateway_installer)], stream=True)
     reporter.next()
     run_controller_command(
         runner,

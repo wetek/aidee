@@ -1,7 +1,8 @@
 # Update an existing Aidee controller
 
-These instructions are for an existing Aidee VPS. Alpha 17 prints numbered
-apply steps and streams the long image build. Run the fleet update from the
+These instructions are for an existing Aidee VPS. Alpha 18 installs the
+onboarding plugin in the assistant Hermes home, records a per-dashboard HTTPS
+origin, and relocates leftover git checkouts. Run the fleet update from the
 owner's SSH terminal with sudo.
 
 ## Rules
@@ -22,23 +23,23 @@ owner's SSH terminal with sudo.
 
 ### One-time bootstrap from Alpha 12 or older
 
-Older releases do not contain the fleet updater. Fetch the exact Alpha 17 tag
+Older releases do not contain the fleet updater. Fetch the exact Alpha 18 tag
 and preview it:
 
 ~~~bash
 sudo install -d -m 0755 /opt/aidee/releases
-sudo git clone --branch v0.1.0-alpha.17 --depth 1 \
+sudo git clone --branch v0.1.0-alpha.18 --depth 1 \
   https://github.com/wetek/aidee.git \
-  /opt/aidee/releases/v0.1.0-alpha.17
-sudo /opt/aidee/releases/v0.1.0-alpha.17/platform/scripts/update-host.sh \
-  --release v0.1.0-alpha.17 --preview
+  /opt/aidee/releases/v0.1.0-alpha.18
+sudo /opt/aidee/releases/v0.1.0-alpha.18/platform/scripts/update-host.sh \
+  --release v0.1.0-alpha.18 --preview
 ~~~
 
 After reviewing the preview and explicitly approving it, run:
 
 ~~~bash
-sudo /opt/aidee/releases/v0.1.0-alpha.17/platform/scripts/update-host.sh \
-  --release v0.1.0-alpha.17 --apply --approved
+sudo /opt/aidee/releases/v0.1.0-alpha.18/platform/scripts/update-host.sh \
+  --release v0.1.0-alpha.18 --apply --approved
 ~~~
 
 ### Future updates

@@ -118,7 +118,7 @@ The controller scans Git-safe changes before committing them. Encrypted backups 
 
 A chatbot must never receive secrets. The owner enters them through masked terminal input or a private Hermes dashboard.
 
-Dashboards and APIs bind to loopback by default. Tailscale Serve is the default automated phone-access adapter. An SSH tunnel provides temporary access. Cloudflare Tunnel and Access remain a planned custom-domain adapter.
+Dashboards and APIs bind to loopback by default. Tailscale Serve is the default automated phone-access adapter. An SSH tunnel provides temporary access. An owner may record a custom HTTPS origin per dashboard. That origin is stored in `registry.yaml` and the assistant `config.yaml` `dashboard.public_url`. Telegram menu buttons copy that URL. Cloudflare Tunnel remains a planned adapter for provisioning the hostname itself.
 
 ## Controller onboarding
 
