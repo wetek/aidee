@@ -663,8 +663,9 @@ def create_containers(assistant, image_id, fleet_dir, runtime_dir):
                 "/run:rw,exec,nosuid,nodev,size=64m",
                 "--tmpfs",
                 "/tmp:rw,nosuid,nodev,noexec,size=64m",
-                image_id,
+                "--entrypoint",
                 "socat",
+                image_id,
                 "TCP-LISTEN:9121,fork,reuseaddr",
                 "TCP:127.0.0.1:9119",
             ]
