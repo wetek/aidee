@@ -3,17 +3,26 @@
 
 import json
 import os
+import sys
 import tempfile
 from pathlib import Path
 
 import yaml
 
+SETUP_DIR = Path(__file__).resolve().parents[1] / "setup"
+if str(SETUP_DIR) not in sys.path:
+    sys.path.insert(0, str(SETUP_DIR))
+from onboarding_state import (
+    default_status,
+    mark_step,
+    migrate_status,
+    onboarding_complete as status_is_complete,
+)
 
 CONTAINER_UID = 10000
 CONTAINER_REPOS_ROOT = "/opt/data/aidee/repos"
 ONBOARDING_RELATIVE_PATH = Path("aidee/onboarding-status.json")
-ONBOARDING_STEPS = ("identity", "dashboard", "model", "telegram", "repository")
-COMPLETE_STEP_STATES = {"complete", "deferred", "not_applicable"}
+COMPLETE_STEP_STATES = {"completed", "skipped"}
 STEP_STATES = COMPLETE_STEP_STATES | {"pending", "in_progress"}
 
 
@@ -34,11 +43,16 @@ def build_soul_document(assistant, owner):
         f"Store every coding-task repository under {CONTAINER_REPOS_ROOT}.",
         "",
         "## First-run onboarding",
-        f"Read `/opt/data/{ONBOARDING_RELATIVE_PATH}` before operational work.",
-        "On every later interaction, resume the first incomplete onboarding step.",
-        "Cover identity, dashboard access, model setup, Telegram setup, and repository",
-        "access. Record a step as complete only after the owner or a direct check",
-        "confirms it. Preserve existing credentials and configuration.",
+        "Before operational work, run `/opt/aidee/onboarding/onboarding-gate.py`",
+        f"with `--status-file /opt/data/{ONBOARDING_RELATIVE_PATH}`,",
+        f"`--role assistant --assistant-kind {kind} --mode decide`.",
+        "If it returns `offer`, use one interactive clarify with `Resume now` and",
+        "`Not now`. Record the answer with the gate. Resume the first incomplete",
+        "required step only after `Resume now`, then resolve optional steps in the",
+        "same flow. Use `/opt/aidee/onboarding/mark-onboarding-step.py` for every",
+        "completed or explicitly skipped step. Never infer external completion.",
+        "When the gate returns `silent` or `complete`, do not ask again.",
+        "Preserve existing credentials and configuration.",
         "",
         "## Communication standards",
         "- Default to 120 words or fewer. Expand when safety, a decision, or an error requires it.",
@@ -82,36 +96,16 @@ def default_assistant_config(assistant):
     }
 
 
-def default_onboarding_status():
-    return {
-        "schema_version": 1,
-        "steps": {step: {"status": "pending"} for step in ONBOARDING_STEPS},
-    }
+def default_onboarding_status(assistant_kind="personal", config=None):
+    return default_status("assistant", assistant_kind, config)
+
+
+def merge_onboarding_status(current, assistant_kind="personal", config=None):
+    return migrate_status(current, "assistant", assistant_kind, config)
 
 
 def onboarding_complete(status):
-    steps = status.get("steps") if isinstance(status, dict) else None
-    return isinstance(steps, dict) and all(
-        isinstance(steps.get(step), dict)
-        and steps[step].get("status") in COMPLETE_STEP_STATES
-        for step in ONBOARDING_STEPS
-    )
-
-
-def merge_onboarding_status(current):
-    desired = default_onboarding_status()
-    if not isinstance(current, dict):
-        return desired
-    desired["schema_version"] = 1
-    current_steps = current.get("steps")
-    if isinstance(current_steps, dict):
-        for step in ONBOARDING_STEPS:
-            value = current_steps.get(step)
-            if isinstance(value, dict):
-                desired["steps"][step].update(value)
-                if desired["steps"][step].get("status") not in STEP_STATES:
-                    desired["steps"][step]["status"] = "pending"
-    return desired
+    return status_is_complete(status)
 
 
 def atomic_write(path, content, uid=None, gid=None, mode=0o660):
@@ -179,6 +173,61 @@ def ensure_file_metadata(path, uid=None, gid=None, mode=0o660):
             )
     except PermissionError:
         pass
+
+
+def reconcile_dashboard_branding(assistant, runtime_dir, uid=None, gid=None):
+    """Converge local display configuration without replacing owner settings."""
+    changed = []
+    config_path = runtime_dir / "config.yaml"
+    try:
+        config = yaml.safe_load(config_path.read_text()) or {}
+    except FileNotFoundError:
+        config = {}
+    except yaml.YAMLError as error:
+        raise RuntimeError(f"assistant config is invalid: {config_path}") from error
+    if not isinstance(config, dict):
+        raise RuntimeError(f"assistant config is not a mapping: {config_path}")
+    display = config.setdefault("display", {})
+    if not isinstance(display, dict):
+        display = {}
+        config["display"] = display
+    if display.get("skin") != assistant["id"]:
+        display["skin"] = assistant["id"]
+        atomic_write(
+            config_path,
+            yaml.safe_dump(config, sort_keys=False),
+            uid=uid,
+            gid=gid,
+        )
+        changed.append(str(config_path))
+
+    skin_path = runtime_dir / "skins" / f"{assistant['id']}.yaml"
+    try:
+        skin = yaml.safe_load(skin_path.read_text()) or {}
+    except FileNotFoundError:
+        skin = {}
+    except yaml.YAMLError as error:
+        raise RuntimeError(f"assistant skin is invalid: {skin_path}") from error
+    if not isinstance(skin, dict):
+        raise RuntimeError(f"assistant skin is not a mapping: {skin_path}")
+    branding = skin.setdefault("branding", {})
+    if not isinstance(branding, dict):
+        branding = {}
+        skin["branding"] = branding
+    expected = {
+        "agent_name": assistant["name"],
+        "response_label": f" ⚕ {assistant['name']} ",
+    }
+    if any(branding.get(key) != value for key, value in expected.items()):
+        branding.update(expected)
+        atomic_write(
+            skin_path,
+            yaml.safe_dump(skin, sort_keys=False),
+            uid=uid,
+            gid=gid,
+        )
+        changed.append(str(skin_path))
+    return changed, config
 
 
 def reconcile_assistant_files(
@@ -257,21 +306,11 @@ def reconcile_assistant_files(
         changed.append(str(runtime_config))
     ensure_file_metadata(runtime_config, uid=uid, gid=gid)
 
+    branding_changes, runtime_values = reconcile_dashboard_branding(
+        assistant, runtime_dir, uid=uid, gid=gid
+    )
+    changed.extend(branding_changes)
     skin = runtime_dir / "skins" / f"{assistant['id']}.yaml"
-    if not skin.is_file():
-        skin_config = {
-            "branding": {
-                "agent_name": assistant["name"],
-                "response_label": f" ⚕ {assistant['name']} ",
-            }
-        }
-        atomic_write(
-            skin,
-            yaml.safe_dump(skin_config, sort_keys=False),
-            uid=uid,
-            gid=gid,
-        )
-        changed.append(str(skin))
     ensure_file_metadata(skin, uid=uid, gid=gid)
 
     repos = runtime_dir / "aidee" / "repos"
@@ -280,12 +319,36 @@ def reconcile_assistant_files(
     status_path = runtime_dir / ONBOARDING_RELATIVE_PATH
     try:
         current = json.loads(status_path.read_text())
-    except (FileNotFoundError, json.JSONDecodeError):
+    except FileNotFoundError:
         current = {}
-    merged = merge_onboarding_status(current)
+    except json.JSONDecodeError as error:
+        raise RuntimeError(
+            f"assistant onboarding status is invalid: {status_path}"
+        ) from error
+    telegram = (runtime_values.get("platforms") or {}).get("telegram") or {}
+    dashboard = runtime_values.get("dashboard") or {}
+    onboarding_config = {
+        "telegram_enabled": bool(telegram.get("enabled", True)),
+        "dashboard_menu_enabled": bool(dashboard.get("public_url")),
+    }
+    assistant_kind = assistant.get("kind", "personal")
+    merged = merge_onboarding_status(current, assistant_kind, onboarding_config)
     rendered = json.dumps(merged, indent=2) + "\n"
     if not status_path.is_file() or status_path.read_text() != rendered:
         atomic_write(status_path, rendered, uid=uid, gid=gid, mode=0o660)
         changed.append(str(status_path))
+    if merged["steps"]["dashboard_branding"]["status"] != "completed":
+        mark_step(
+            status_path,
+            "assistant",
+            "dashboard_branding",
+            "completed",
+            assistant_kind=assistant_kind,
+            config=onboarding_config,
+            evidence_source="reconciler",
+            evidence_detail="display skin and branding match assistant identity",
+        )
+        if str(status_path) not in changed:
+            changed.append(str(status_path))
     ensure_file_metadata(status_path, uid=uid, gid=gid)
     return changed

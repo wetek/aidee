@@ -31,20 +31,22 @@ controller_git() {
 }
 
 current=""
-current_dirty=true
+current_patch_valid=false
 if [[ -d "${active_source}/.git" ]]; then
   current="$(
     controller_git -C "${active_source}" describe --tags --exact-match \
       2>/dev/null || true
   )"
-  if [[ -z "$(controller_git -C "${active_source}" status --porcelain)" ]]; then
-    current_dirty=false
+  if runuser -u "${AIDEE_CONTROLLER_USER}" -- \
+    "${script_dir}/apply-hermes-runtime-patch.sh" "${active_source}"
+  then
+    current_patch_valid=true
   fi
 fi
 hermes_binary="$(readlink -f "${controller_home}/.local/bin/hermes" 2>/dev/null || true)"
 active_real="$(readlink -f "${active_source}" 2>/dev/null || true)"
 if [[ "${current}" == "${version}" ]] &&
-  [[ "${current_dirty}" == false ]] &&
+  [[ "${current_patch_valid}" == true ]] &&
   [[ "${hermes_binary}" == "${active_real}/venv/bin/hermes" ]] &&
   [[ -x "${hermes_binary}" ]]
 then
@@ -67,6 +69,8 @@ if [[ ! -d "${target}/.git" ]]; then
     echo "error: fetched Hermes source is not tagged ${version}" >&2
     exit 1
   }
+  runuser -u "${AIDEE_CONTROLLER_USER}" -- \
+    "${script_dir}/apply-hermes-runtime-patch.sh" "${temporary}"
   mv "${temporary}" "${target}"
   trap - EXIT
 fi
@@ -74,12 +78,12 @@ fetched="$(
   controller_git -C "${target}" describe --tags --exact-match \
     2>/dev/null || true
 )"
-if [[ "${fetched}" != "${version}" ]] ||
-  [[ -n "$(controller_git -C "${target}" status --porcelain)" ]]
-then
-  echo "error: cached Hermes source is not the clean exact tag ${version}" >&2
+if [[ "${fetched}" != "${version}" ]]; then
+  echo "error: cached Hermes source is not the exact tag ${version}" >&2
   exit 1
 fi
+runuser -u "${AIDEE_CONTROLLER_USER}" -- \
+  "${script_dir}/apply-hermes-runtime-patch.sh" "${target}"
 
 # The positional argument expands inside the child shell.
 # shellcheck disable=SC2016

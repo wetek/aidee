@@ -1,0 +1,576 @@
+diff --git a/agent/conversation_loop.py b/agent/conversation_loop.py
+index 6739c096e4..8a36a72fd8 100644
+--- a/agent/conversation_loop.py
++++ b/agent/conversation_loop.py
+@@ -640,10 +640,31 @@ def _persist_system_prompt(agent, failure_message: str, *, persist_tools: bool =
+     if not agent._session_db:
+         return
+     try:
+-        agent._session_db.update_system_prompt(agent.session_id, agent._cached_system_prompt)
+-        if persist_tools:
+-            from tools.mcp_tool_agent import persist_agent_tool_names
+-            persist_agent_tool_names(agent)
++        from agent.system_prompt import runtime_context_fingerprint
++        fingerprint = runtime_context_fingerprint(agent, agent._cached_system_prompt)
++        atomic_persist = getattr(type(agent._session_db), "update_runtime_context", None)
++        if callable(atomic_persist):
++            from tools.mcp_tool_agent import agent_tool_names
++            atomic_persist(
++                agent._session_db,
++                agent.session_id,
++                agent._cached_system_prompt,
++                fingerprint,
++                agent_tool_names(agent) if persist_tools else None,
++                persist_tools=persist_tools,
++            )
++        else:
++            # Compatibility for third-party SessionDB-like implementations.
++            agent._session_db.update_system_prompt(
++                agent.session_id, agent._cached_system_prompt
++            )
++            agent._session_db.patch_session_model_config(
++                agent.session_id,
++                {"_runtime_context_fingerprint": fingerprint},
++            )
++            if persist_tools:
++                from tools.mcp_tool_agent import persist_agent_tool_names
++                persist_agent_tool_names(agent)
+     except Exception as exc:
+         logger.warning(failure_message, agent.session_id, exc)
+ 
+@@ -671,7 +692,28 @@ def _restore_or_build_system_prompt(agent, system_message, conversation_history)
+                 agent.session_id, exc,
+             )
+ 
+-    if stored_prompt and _stored_prompt_matches_runtime(agent, stored_prompt):
++    current_prompt = None
++    current_fingerprint = None
++    stored_fingerprint = None
++    if stored_prompt and session_row is not None and "model_config" in session_row:
++        from agent.system_prompt import runtime_context_fingerprint
++        current_prompt = agent._build_system_prompt(system_message)
++        current_fingerprint = runtime_context_fingerprint(agent, current_prompt)
++        try:
++            raw_model_config = session_row.get("model_config") or {}
++            model_config = (
++                raw_model_config
++                if isinstance(raw_model_config, dict)
++                else json.loads(raw_model_config)
++            )
++            stored_fingerprint = model_config.get("_runtime_context_fingerprint")
++        except (AttributeError, TypeError, ValueError):
++            stored_fingerprint = None
++
++    if stored_prompt and _stored_prompt_matches_runtime(
++        agent, stored_prompt, stored_fingerprint=stored_fingerprint,
++        current_fingerprint=current_fingerprint,
++    ):
+         if _bot_chat_prompt_stale(agent, stored_prompt):
+             logger.info(
+                 "Bot Chat capability epoch changed for session %s; rebuilding system prompt to "
+@@ -750,7 +792,10 @@ def _restore_or_build_system_prompt(agent, system_message, conversation_history)
+         )
+ 
+     # First turn of a new session (or recovering from a broken stored prompt).
+-    agent._cached_system_prompt = agent._build_system_prompt(system_message)
++    agent._cached_system_prompt = (
++        current_prompt if current_prompt is not None
++        else agent._build_system_prompt(system_message)
++    )
+ 
+     # The rebuilt prompt describes the CURRENT surface, but a surface note left in the
+     # transcript by an earlier switch does not — retire it here too, or a rebuild for an
+@@ -785,9 +830,15 @@ def _restore_or_build_system_prompt(agent, system_message, conversation_history)
+     )
+ 
+ 
+-def _stored_prompt_matches_runtime(agent, prompt: str) -> bool:
++def _stored_prompt_matches_runtime(
++    agent, prompt: str, *, stored_fingerprint: Optional[str] = None,
++    current_fingerprint: Optional[str] = None,
++) -> bool:
+     """Return False when the persisted runtime-identity lines are stale."""
+ 
++    if current_fingerprint is not None and stored_fingerprint != current_fingerprint:
++        return False
++
+     _identity, runtime_marker, runtime = split_runtime_boundary(prompt)
+ 
+     def host_info_value(label: str) -> str:
+diff --git a/agent/system_prompt.py b/agent/system_prompt.py
+index 3778515924..16bed08f28 100644
+--- a/agent/system_prompt.py
++++ b/agent/system_prompt.py
+@@ -11,6 +11,7 @@ provider, timestamp line).  See ``references/system-prompt-invariant.md``.
+ from __future__ import annotations
+ 
+ import json
++import hashlib
+ import logging
+ import os
+ import re
+@@ -25,7 +26,7 @@ from agent.prompt_builder import (
+     TOOL_USE_ENFORCEMENT_GUIDANCE, TOOL_USE_ENFORCEMENT_MODELS, drain_truncation_warnings,
+ )
+ from agent import prompt_builder as _pb
+-from agent.runtime_cwd import resolve_context_cwd
++from agent.runtime_cwd import resolve_agent_cwd, resolve_context_cwd
+ from hermes_constants import get_default_hermes_root, get_hermes_home
+ from utils import is_truthy_value
+ 
+@@ -675,6 +676,83 @@ def build_system_prompt(agent: Any, system_message: Optional[str] = None) -> str
+     return "\n\n".join(p for p in (parts["stable"], parts["context"], parts["volatile"]) if p)
+ 
+ 
++def _canonical_json_value(value: Any, depth: int = 0) -> Any:
++    """Normalize JSON-like schema data without using process-specific repr values."""
++    if depth > 32:
++        return {"invalid": "maximum_depth"}
++    if value is None or isinstance(value, (bool, int, str)):
++        return value
++    if isinstance(value, float):
++        return value if value == value and abs(value) != float("inf") else {"invalid": "nonfinite_float"}
++    if isinstance(value, (list, tuple)):
++        return [_canonical_json_value(item, depth + 1) for item in value]
++    if isinstance(value, dict):
++        return {
++            key: _canonical_json_value(value[key], depth + 1)
++            for key in sorted(item for item in value if isinstance(item, str))
++        }
++    return {"invalid_type": f"{type(value).__module__}.{type(value).__qualname__}"}
++
++
++def _json_sha256(value: Any) -> str:
++    canonical = json.dumps(
++        _canonical_json_value(value),
++        sort_keys=True,
++        separators=(",", ":"),
++        ensure_ascii=False,
++        allow_nan=False,
++    )
++    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
++
++
++def _tool_identity(tool: Any) -> dict:
++    """Return bounded digests of provider-visible fields, excluding runtime metadata."""
++    if not isinstance(tool, dict):
++        return {"invalid_type": type(tool).__qualname__}
++    function = tool.get("function")
++    if not isinstance(function, dict):
++        return {"type": tool.get("type") if isinstance(tool.get("type"), str) else ""}
++    return {
++        "type": tool.get("type") if isinstance(tool.get("type"), str) else "",
++        "name": function.get("name") if isinstance(function.get("name"), str) else "",
++        "description_sha256": _json_sha256(function.get("description", "")),
++        "parameters_sha256": _json_sha256(function.get("parameters", {})),
++    }
++
++
++def runtime_context_fingerprint(agent: Any, prompt: str) -> str:
++    """Hash effective prompt and runtime identity without persisting raw context."""
++    try:
++        cwd = str(resolve_agent_cwd())
++    except Exception:
++        cwd = ""
++    payload = {
++        "prompt": prompt,
++        "model": str(getattr(agent, "model", "") or ""),
++        "provider": str(getattr(agent, "provider", "") or ""),
++        "cwd": cwd,
++        "tools": sorted(
++            (_tool_identity(tool) for tool in (getattr(agent, "tools", None) or [])),
++            key=lambda item: (
++                item.get("name", ""),
++                json.dumps(item, sort_keys=True, separators=(",", ":"), ensure_ascii=False),
++            ),
++        ),
++        "enabled_toolsets": sorted(
++            value for value in (getattr(agent, "enabled_toolsets", None) or [])
++            if isinstance(value, str)
++        ),
++        "disabled_toolsets": sorted(
++            value for value in (getattr(agent, "disabled_toolsets", None) or [])
++            if isinstance(value, str)
++        ),
++    }
++    canonical = json.dumps(
++        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
++    )
++    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
++
++
+ def invalidate_system_prompt(agent: Any) -> None:
+     """Force a rebuild on the next turn (after compression): reload memory from
+     disk and clear the frozen plugin snapshot (previous bytes stashed as the
+@@ -736,7 +814,8 @@ def format_tools_for_system_message(agent: Any) -> str:
+ 
+ 
+ __all__ = ["build_system_prompt_parts", "build_system_prompt", "invalidate_system_prompt",
+-           "platform_hint", "restore_plugin_prompt_sections", "format_tools_for_system_message"]
++           "platform_hint", "restore_plugin_prompt_sections", "format_tools_for_system_message",
++           "runtime_context_fingerprint"]
+ 
+ 
+ # ---- BEGIN PLUGIN-COMPAT (revert-scheduled; see COMPAT_MANIFEST.md) ----
+diff --git a/gateway/run_agent_cache.py b/gateway/run_agent_cache.py
+index 71814d7c9e..5076bc1273 100644
+--- a/gateway/run_agent_cache.py
++++ b/gateway/run_agent_cache.py
+@@ -61,6 +61,18 @@ class GatewayAgentCacheMixin:
+             out["tools.registry_generation"] = getattr(registry, "_generation", None)
+         except Exception:
+             out["tools.registry_generation"] = None
++        try:
++            import hashlib
++            from agent.prompt_builder import load_soul_md
++            soul = load_soul_md() or ""
++            out["runtime.soul_sha256"] = hashlib.sha256(soul.encode("utf-8")).hexdigest()
++        except Exception:
++            out["runtime.soul_sha256"] = None
++        try:
++            from agent.runtime_cwd import resolve_agent_cwd
++            out["runtime.cwd"] = str(resolve_agent_cwd())
++        except Exception:
++            out["runtime.cwd"] = None
+         for key, value in cls._memory_provider_identity_signature(cfg_get(cfg, "memory", "provider")).items():
+             out[f"memory.{key}"] = value
+         return out
+diff --git a/hermes_state_sessions.py b/hermes_state_sessions.py
+index 37834b9227..b5127d5eeb 100644
+--- a/hermes_state_sessions.py
++++ b/hermes_state_sessions.py
+@@ -624,6 +624,49 @@ class SessionSessionsMixin:
+             self._delete_unreferenced_system_prompts(conn)
+         self._execute_write(_do)
+ 
++    def update_runtime_context(
++        self, session_id: str, system_prompt: str, fingerprint: str,
++        tool_names: Optional[List[str]] = None, *, persist_tools: bool = False,
++    ) -> None:
++        """Atomically store a prompt, its fingerprint, and optionally its tool order."""
++        if not session_id:
++            return
++
++        def _do(conn):
++            merged = self._merge_model_config_json(
++                conn, session_id, {"_runtime_context_fingerprint": fingerprint}
++            )
++            if merged is _MODEL_CONFIG_ROW_MISSING:
++                return
++            if persist_tools:
++                conn.execute(
++                    """UPDATE sessions
++                       SET system_prompt_hash = ?, system_prompt = NULL,
++                           model_config = ?, tool_names = ?
++                       WHERE id = ?""",
++                    (
++                        self._store_system_prompt(conn, system_prompt),
++                        merged,
++                        json.dumps(list(tool_names or [])),
++                        session_id,
++                    ),
++                )
++            else:
++                conn.execute(
++                    """UPDATE sessions
++                       SET system_prompt_hash = ?, system_prompt = NULL,
++                           model_config = ?
++                       WHERE id = ?""",
++                    (
++                        self._store_system_prompt(conn, system_prompt),
++                        merged,
++                        session_id,
++                    ),
++                )
++            self._delete_unreferenced_system_prompts(conn)
++
++        self._execute_write(_do)
++
+     def update_session_tool_names(self, session_id: str, tool_names: Optional[List[str]]) -> None:
+         """Persist the resolved ``tools[]`` name order so a rebuilt AIAgent can't fork the cached tool
+         prefix on a flipped check_fn verdict; ``None`` clears."""
+diff --git a/tests/agent/test_system_prompt_restore.py b/tests/agent/test_system_prompt_restore.py
+index 55fdfe6a1b..c5734a9251 100644
+--- a/tests/agent/test_system_prompt_restore.py
++++ b/tests/agent/test_system_prompt_restore.py
+@@ -16,11 +16,14 @@ instead of rebuilding).  Covers:
+ from __future__ import annotations
+ 
+ import logging
++import json
++import threading
+ from unittest.mock import MagicMock
+ 
+ import pytest
+ 
+ from agent.conversation_loop import _restore_or_build_system_prompt
++from agent.system_prompt import runtime_context_fingerprint
+ from agent.surface_switch import _SURFACE_NAME_END, _SURFACE_SWITCH_NOTE_PREFIX, identity_line_value
+ 
+ 
+@@ -38,9 +41,198 @@ def _make_agent(session_db=None, prebuilt_prompt: str = "BUILT_PROMPT"):
+     # for the legacy restore tests (the reconstruction tests enable it).
+     agent._use_prompt_caching = False
+     agent._build_system_prompt = MagicMock(return_value=prebuilt_prompt)
++    agent.tools = []
++    agent.valid_tool_names = set()
++    agent.enabled_toolsets = []
++    agent.disabled_toolsets = []
++    agent._persist_disabled = False
+     return agent
+ 
+ 
++class TestRuntimeContextFingerprint:
++    @staticmethod
++    def _tool(name: str) -> dict:
++        return {
++            "type": "function",
++            "function": {"name": name, "description": name, "parameters": {"type": "object"}},
++        }
++
++    def _agent(self, db, soul_path, tools):
++        agent = _make_agent(session_db=db)
++        agent.tools = tools
++        agent.valid_tool_names = {tool["function"]["name"] for tool in tools}
++        agent._build_system_prompt = MagicMock(
++            side_effect=lambda _message: (
++                soul_path.read_text()
++                + "\n\nConversation started: Monday, September 14, 2026\n"
++                + "Model: test-model\nProvider: openrouter"
++            )
++        )
++        return agent
++
++    @staticmethod
++    def _persisted_row(agent, prompt):
++        return {
++            "system_prompt": prompt,
++            "model_config": json.dumps({
++                "_runtime_context_fingerprint": runtime_context_fingerprint(agent, prompt)
++            }),
++        }
++
++    def test_soul_change_rebuilds_prompt_and_preserves_history(self, tmp_path, monkeypatch):
++        monkeypatch.setenv("TERMINAL_CWD", str(tmp_path))
++        soul = tmp_path / "SOUL.md"
++        soul.write_text("OLD DIRECTIVE")
++        db = MagicMock()
++        tools = [self._tool("clarify")]
++        original = self._agent(db, soul, tools)
++        stored = original._build_system_prompt(None)
++        db.get_session.return_value = {
++            **self._persisted_row(original, stored),
++            "tool_names": json.dumps(["clarify"]),
++        }
++        soul.write_text("NEW MANAGED DIRECTIVE")
++        history = [{"role": "user", "content": "keep this message"}]
++        before = list(history)
++        resumed = self._agent(db, soul, tools)
++
++        _restore_or_build_system_prompt(resumed, None, history)
++
++        assert "NEW MANAGED DIRECTIVE" in resumed._cached_system_prompt
++        assert "OLD DIRECTIVE" not in resumed._cached_system_prompt
++        assert "clarify" in resumed.valid_tool_names
++        assert history == before
++        db.update_system_prompt.assert_called_once_with(
++            resumed.session_id, resumed._cached_system_prompt
++        )
++        db.update_session_tool_names.assert_called_once_with(
++            resumed.session_id, ["clarify"]
++        )
++
++    def test_unchanged_fingerprint_reuses_persisted_bytes(self, tmp_path, monkeypatch):
++        monkeypatch.setenv("TERMINAL_CWD", str(tmp_path))
++        soul = tmp_path / "SOUL.md"
++        soul.write_text("UNCHANGED DIRECTIVE")
++        db = MagicMock()
++        agent = self._agent(db, soul, [self._tool("clarify")])
++        stored = agent._build_system_prompt(None)
++        db.get_session.return_value = self._persisted_row(agent, stored)
++
++        resumed = self._agent(db, soul, [self._tool("clarify")])
++        _restore_or_build_system_prompt(
++            resumed, None, [{"role": "user", "content": "continue"}]
++        )
++
++        assert resumed._cached_system_prompt == stored
++        db.update_system_prompt.assert_not_called()
++
++    def test_tool_change_rebuilds_prompt_and_persists_new_list(self, tmp_path, monkeypatch):
++        monkeypatch.setenv("TERMINAL_CWD", str(tmp_path))
++        soul = tmp_path / "SOUL.md"
++        soul.write_text("DIRECTIVE")
++        db = MagicMock()
++        old_agent = self._agent(db, soul, [self._tool("read_file")])
++        stored = old_agent._build_system_prompt(None)
++        db.get_session.return_value = self._persisted_row(old_agent, stored)
++        tools = [self._tool("read_file"), self._tool("clarify")]
++        resumed = self._agent(db, soul, tools)
++
++        _restore_or_build_system_prompt(
++            resumed, None, [{"role": "user", "content": "continue"}]
++        )
++
++        resumed._build_system_prompt.assert_called_once_with(None)
++        db.update_system_prompt.assert_called_once_with(
++            resumed.session_id, resumed._cached_system_prompt
++        )
++        db.update_session_tool_names.assert_called_once_with(
++            resumed.session_id, ["read_file", "clarify"]
++        )
++
++    def test_tool_identity_is_order_independent_and_ignores_runtime_metadata(self):
++        first = _make_agent()
++        first.tools = [
++            {
++                **self._tool("b"),
++                "handler": object(),
++                "api_key": "must-not-affect-identity",
++            },
++            self._tool("a"),
++        ]
++        second = _make_agent()
++        second.tools = [self._tool("a"), self._tool("b")]
++
++        assert runtime_context_fingerprint(first, "prompt") == (
++            runtime_context_fingerprint(second, "prompt")
++        )
++
++        second.tools[1]["function"]["parameters"]["properties"] = {
++            "x": {"type": "string"}
++        }
++        assert runtime_context_fingerprint(first, "prompt") != (
++            runtime_context_fingerprint(second, "prompt")
++        )
++
++    def test_missing_fingerprint_refreshes_once(self, tmp_path, monkeypatch):
++        monkeypatch.setenv("TERMINAL_CWD", str(tmp_path))
++        soul = tmp_path / "SOUL.md"
++        soul.write_text("DIRECTIVE")
++        db = MagicMock()
++        first = self._agent(db, soul, [self._tool("clarify")])
++        stored = first._build_system_prompt(None)
++        db.get_session.return_value = {"system_prompt": stored, "model_config": "{}"}
++
++        _restore_or_build_system_prompt(
++            first, None, [{"role": "user", "content": "one"}]
++        )
++
++        fingerprint = db.patch_session_model_config.call_args.args[1][
++            "_runtime_context_fingerprint"
++        ]
++        db.reset_mock()
++        db.get_session.return_value = {
++            "system_prompt": first._cached_system_prompt,
++            "model_config": {"_runtime_context_fingerprint": fingerprint},
++        }
++        second = self._agent(db, soul, [self._tool("clarify")])
++        _restore_or_build_system_prompt(
++            second, None, [{"role": "user", "content": "two"}]
++        )
++
++        db.update_system_prompt.assert_not_called()
++        db.patch_session_model_config.assert_not_called()
++
++    def test_atomic_runtime_context_write_converges_under_race(self, tmp_path):
++        from hermes_state import SessionDB
++
++        db = SessionDB(db_path=tmp_path / "state.db")
++        try:
++            db.create_session("race", source="cli")
++            barrier = threading.Barrier(2)
++
++            def persist():
++                barrier.wait()
++                db.update_runtime_context(
++                    "race", "same prompt", "same fingerprint", ["a"],
++                    persist_tools=True,
++                )
++
++            threads = [threading.Thread(target=persist) for _ in range(2)]
++            for thread in threads:
++                thread.start()
++            for thread in threads:
++                thread.join()
++
++            row = db.get_session("race")
++            assert row["system_prompt"] == "same prompt"
++            assert json.loads(row["model_config"])[
++                "_runtime_context_fingerprint"
++            ] == "same fingerprint"
++            assert json.loads(row["tool_names"]) == ["a"]
++        finally:
++            db.close()
++
++
+ # ---------------------------------------------------------------------------
+ # Surface switch (#104414)
+ # ---------------------------------------------------------------------------
+@@ -612,7 +804,7 @@ class TestPerResponseSessionWritePath:
+                 _restore_or_build_system_prompt(second, None, history)
+ 
+             assert second._cached_system_prompt == "GROUP_PROMPT"
+-            second._build_system_prompt.assert_not_called()
++            second._build_system_prompt.assert_called_once_with(None)
+             assert "is null" not in caplog.text
+ 
+ 
+diff --git a/tests/gateway/test_agent_cache.py b/tests/gateway/test_agent_cache.py
+index 7897768837..5c081745f2 100644
+--- a/tests/gateway/test_agent_cache.py
++++ b/tests/gateway/test_agent_cache.py
+@@ -225,6 +225,53 @@ class TestExtractCacheBustingConfig:
+ 
+         assert out["tools.registry_generation"] == 12345
+ 
++    def test_soul_change_busts_cached_agent_signature(self, monkeypatch, tmp_path):
++        from gateway.run import GatewayRunner
++        from hermes_constants import reset_hermes_home_override, set_hermes_home_override
++
++        soul = tmp_path / "SOUL.md"
++        soul.write_text("old managed instructions")
++        token = set_hermes_home_override(str(tmp_path))
++        try:
++            first_keys = GatewayRunner._extract_cache_busting_config({})
++            soul.write_text("new managed instructions")
++            second_keys = GatewayRunner._extract_cache_busting_config({})
++        finally:
++            reset_hermes_home_override(token)
++
++        runtime = {"api_key": "secret", "provider": "openrouter"}
++        first = GatewayRunner._agent_config_signature(
++            "model", runtime, [], "", cache_keys=first_keys
++        )
++        second = GatewayRunner._agent_config_signature(
++            "model", runtime, [], "", cache_keys=second_keys
++        )
++        assert first != second
++        assert first_keys["runtime.soul_sha256"] != second_keys["runtime.soul_sha256"]
++
++    def test_soul_symlink_swap_busts_cache_without_stat_dependency(
++        self, monkeypatch, tmp_path
++    ):
++        from gateway.run import GatewayRunner
++        from hermes_constants import reset_hermes_home_override, set_hermes_home_override
++
++        old = tmp_path / "old-soul"
++        new = tmp_path / "new-soul"
++        old.write_text("same-size-old")
++        new.write_text("same-size-new")
++        soul = tmp_path / "SOUL.md"
++        soul.symlink_to(old)
++        token = set_hermes_home_override(str(tmp_path))
++        try:
++            first = GatewayRunner._extract_cache_busting_config({})
++            soul.unlink()
++            soul.symlink_to(new)
++            second = GatewayRunner._extract_cache_busting_config({})
++        finally:
++            reset_hermes_home_override(token)
++
++        assert first["runtime.soul_sha256"] != second["runtime.soul_sha256"]
++
+     # -- Provider-declared identity (MemoryProvider.identity_signature) ------
+ 
+     @staticmethod

@@ -5,7 +5,20 @@ description: Completes the Aidee controller's first-run Telegram branding and da
 
 # Controller onboarding
 
-Offer this workflow in the first authorized conversation. The owner may complete Telegram branding now, defer it, or keep the current profile.
+Run the durable gate before operational work:
+
+~~~bash
+/opt/aidee/source/platform/setup/onboarding-gate.py \
+  --status-file /var/lib/aidee/fleet/controller/CONTROLLER_ONBOARDING_STATUS.json \
+  --role controller --mode decide
+~~~
+
+If it returns `offer`, ask one interactive clarify question with `Resume now`
+and `Not now`. Record the answer with the same command and either
+`--mode resume-now` or `--mode not-now`. Only `Resume now` starts this workflow.
+`Not now` suppresses later offers until an owner requests `--mode reopen` or a
+later schema adds a required step. If the gate returns `silent` or `complete`,
+do not ask again.
 
 ## Read the approved state
 
@@ -59,22 +72,9 @@ documented SSH preview command. It never applies an update from cron.
 
 ## Offer Telegram branding
 
-Ask:
+Ask whether to set up the bot profile now or keep the current profile.
 
-1. Set up the bot profile now (recommended).
-2. Remind me later.
-3. Keep the current profile.
-
-If the owner chooses later, run:
-
-~~~bash
-/opt/aidee/source/platform/controller-tools/set-telegram-profile-status.py \
-  --status-file /var/lib/aidee/fleet/controller/CONTROLLER_ONBOARDING_STATUS.json \
-  --status deferred \
-  --confirmed
-~~~
-
-If the owner keeps the current profile, run:
+If the owner keeps the current profile and current menu-button state, run:
 
 ~~~bash
 /opt/aidee/source/platform/controller-tools/set-telegram-profile-status.py \
@@ -83,7 +83,9 @@ If the owner keeps the current profile, run:
   --confirmed
 ~~~
 
-For either choice, skip profile drafting and continue to phone access verification.
+This records both optional Telegram profile and menu-button steps as skipped.
+Continue to phone access verification. If the owner chooses setup, continue
+with profile drafting instead.
 
 ## Draft the bot profile
 

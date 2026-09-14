@@ -191,12 +191,39 @@ class FleetUpdateTests(unittest.TestCase):
             fleet.mkdir(parents=True)
             registry = fleet / "registry.yaml"
             registry.write_text(yaml.safe_dump(legacy_registry()))
+            controller_status = (
+                state_root
+                / "fleet/controller/CONTROLLER_ONBOARDING_STATUS.json"
+            )
+            controller_status.parent.mkdir()
+            controller_status.write_text(
+                json.dumps({"telegram_profile_status": "deferred"})
+            )
+            assistant_status = (
+                state_root
+                / "runtime/assistants/pilot/data/aidee/onboarding-status.json"
+            )
+            assistant_status.parent.mkdir(parents=True)
+            assistant_status.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "steps": {"model": {"status": "deferred"}},
+                    }
+                )
+            )
 
             first = reconcile.run_migrations(ROOT, state_root)
             first_result = registry.read_text()
             second = reconcile.run_migrations(ROOT, state_root)
 
-            self.assertEqual(first, ["001_alpha13_onboarding_registry"])
+            self.assertEqual(
+                first,
+                [
+                    "001_alpha13_onboarding_registry",
+                    "002_alpha14_onboarding_status",
+                ],
+            )
             self.assertEqual(second, [])
             self.assertEqual(registry.read_text(), first_result)
             self.assertTrue(
@@ -211,6 +238,44 @@ class FleetUpdateTests(unittest.TestCase):
                     / "migrations/001_alpha13_onboarding_registry.json"
                 ).is_file()
             )
+            controller_backup = (
+                state_root
+                / "backups/migrations/002_alpha14_onboarding_status"
+                / "controller/CONTROLLER_ONBOARDING_STATUS.json"
+            )
+            assistant_backup = (
+                state_root
+                / "backups/migrations/002_alpha14_onboarding_status"
+                / "assistants/pilot/onboarding-status.json"
+            )
+            self.assertEqual(controller_backup.read_bytes(), controller_status.read_bytes())
+            self.assertEqual(assistant_backup.read_bytes(), assistant_status.read_bytes())
+            self.assertEqual(controller_backup.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(assistant_backup.stat().st_mode & 0o777, 0o600)
+
+    def test_invalid_legacy_status_is_backed_up_before_migration_stops(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state_root = Path(temporary) / "state"
+            fleet = state_root / "fleet"
+            fleet.mkdir(parents=True)
+            (fleet / "registry.yaml").write_text(
+                yaml.safe_dump({"assistants": []})
+            )
+            status = (
+                state_root
+                / "fleet/controller/CONTROLLER_ONBOARDING_STATUS.json"
+            )
+            status.parent.mkdir()
+            status.write_text("{invalid")
+            with self.assertRaisesRegex(RuntimeError, "status is invalid"):
+                reconcile.run_migrations(ROOT, state_root)
+            backup = (
+                state_root
+                / "backups/migrations/002_alpha14_onboarding_status"
+                / "controller/CONTROLLER_ONBOARDING_STATUS.json"
+            )
+            self.assertEqual(backup.read_bytes(), status.read_bytes())
+            self.assertEqual(backup.stat().st_mode & 0o777, 0o600)
 
     def test_legacy_fixture_reconciliation_preserves_config(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -242,7 +307,9 @@ class FleetUpdateTests(unittest.TestCase):
 
             self.assertTrue(changed)
             self.assertEqual(second, [])
-            self.assertEqual(config.read_text(), "model: owner-selected\n")
+            repaired_config = yaml.safe_load(config.read_text())
+            self.assertEqual(repaired_config["model"], "owner-selected")
+            self.assertEqual(repaired_config["display"]["skin"], "pilot")
             self.assertEqual(env.read_text(), "TOKEN=preserved\n")
             self.assertTrue((runtime / "aidee/repos").is_dir())
             self.assertEqual((runtime / "aidee/repos").stat().st_mode & 0o777, 0o770)
@@ -250,20 +317,25 @@ class FleetUpdateTests(unittest.TestCase):
                 (runtime / "aidee/onboarding-status.json").read_text()
             )
             self.assertFalse(assistant_state.onboarding_complete(status))
-            status["steps"]["identity"]["status"] = "complete"
+            self.assertEqual(
+                status["steps"]["dashboard_branding"]["status"], "completed"
+            )
+            status["steps"]["identity"]["status"] = "completed"
             merged = assistant_state.merge_onboarding_status(status)
-            self.assertEqual(merged["steps"]["identity"]["status"], "complete")
-            self.assertEqual(merged["steps"]["dashboard"]["status"], "pending")
-            status["steps"]["dashboard"]["status"] = "invented"
+            self.assertEqual(merged["steps"]["identity"]["status"], "completed")
+            self.assertEqual(
+                merged["steps"]["dashboard_branding"]["status"], "completed"
+            )
+            status["steps"]["identity"]["status"] = "invented"
             repaired = assistant_state.merge_onboarding_status(status)
-            self.assertEqual(repaired["steps"]["dashboard"]["status"], "pending")
+            self.assertEqual(repaired["steps"]["identity"]["status"], "pending")
             soul = (runtime / "SOUL.md").read_text()
             for expected in (
                 "interactive clarify tool",
                 "command approvals on Telegram",
                 "/opt/data/aidee/repos",
                 "Software engineering standards",
-                "resume the first incomplete onboarding step",
+                "first incomplete",
             ):
                 self.assertIn(expected, soul)
 
@@ -301,25 +373,17 @@ class FleetUpdateTests(unittest.TestCase):
         self.assertIn("from assistant_state import", admin_source)
         self.assertIn("from assistant_state import", sync_source)
 
-    def test_controller_runtime_inspects_git_as_controller_user(self):
+    def test_controller_runtime_applies_patch_as_controller_user(self):
         runtime_source = (
             ROOT / "platform/scripts/update-controller-runtime.sh"
         ).read_text()
-        self.assertIn("controller_git()", runtime_source)
         self.assertIn(
-            'controller_git -C "${active_source}" status --porcelain',
+            '"${script_dir}/apply-hermes-runtime-patch.sh" "${active_source}"',
             runtime_source,
         )
         self.assertIn(
-            'controller_git -C "${target}" status --porcelain',
+            '"${script_dir}/apply-hermes-runtime-patch.sh" "${target}"',
             runtime_source,
-        )
-        self.assertNotIn(
-            'git -C "${active_source}" status --porcelain',
-            runtime_source.replace(
-                'controller_git -C "${active_source}" status --porcelain',
-                "",
-            ),
         )
 
     def test_fleet_update_syncs_controller_from_activated_source(self):
@@ -329,9 +393,11 @@ class FleetUpdateTests(unittest.TestCase):
             reconcile_source,
         )
         self.assertIn(
-            '["git", "-C", hermes_source, "status", "--porcelain"]',
+            '"platform/scripts/apply-hermes-runtime-patch.sh"',
             reconcile_source,
         )
+        self.assertIn('"--check"', reconcile_source)
+        self.assertIn("SessionDB.update_runtime_context", reconcile_source)
         self.assertIn(
             'command.extend(["--header", f"Host: {hostname}"])',
             reconcile_source,
@@ -359,6 +425,29 @@ class FleetUpdateTests(unittest.TestCase):
                 updated["assistants"][0]["onboarding"]["status_path"],
                 "aidee/onboarding-status.json",
             )
+            self.assertIn(
+                "required_remaining", updated["assistants"][0]["onboarding"]
+            )
+            self.assertIn(
+                "optional_remaining", updated["assistants"][0]["onboarding"]
+            )
+
+    def test_controller_onboarding_reconciliation_is_idempotent(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state_root = Path(temporary)
+            controller = state_root / "fleet/controller"
+            controller.mkdir(parents=True)
+            (controller / "SOUL.md").write_text("legacy instructions\n")
+            status_path = reconcile.reconcile_controller_onboarding(
+                ROOT, state_root, "Test Owner"
+            )
+            first_status = status_path.read_bytes()
+            first_soul = (controller / "SOUL.md").read_bytes()
+            reconcile.reconcile_controller_onboarding(
+                ROOT, state_root, "Test Owner"
+            )
+            self.assertEqual(status_path.read_bytes(), first_status)
+            self.assertEqual((controller / "SOUL.md").read_bytes(), first_soul)
 
     def test_reconcile_proxy_uses_explicit_socat_entrypoint_before_image(self):
         assistant = legacy_registry()["assistants"][0]

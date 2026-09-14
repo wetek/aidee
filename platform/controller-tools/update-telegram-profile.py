@@ -10,6 +10,13 @@ import urllib.request
 import uuid
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "setup"))
+from onboarding_state import (  # noqa: E402
+    OnboardingError,
+    mark_step,
+    validate_status_path,
+)
+
 
 COMMAND = re.compile(r"^[a-z0-9_]{1,32}$")
 PROFILE_KEYS = {
@@ -254,16 +261,27 @@ def verify_profile(client, profile):
         raise ProfileError("Telegram dashboard menu URL verification failed")
 
 
-def mark_profile_applied(status_path):
+def mark_profile_applied(status_path, menu_enabled=True):
     try:
-        status = json.loads(status_path.read_text())
-    except FileNotFoundError as error:
+        mark_step(
+            status_path,
+            "controller",
+            "telegram_profile_avatar",
+            "completed",
+            evidence_source="verified_tool",
+            evidence_detail="Telegram profile and avatar applied and read back",
+        )
+        if menu_enabled:
+            mark_step(
+                status_path,
+                "controller",
+                "telegram_menu_button",
+                "completed",
+                evidence_source="verified_tool",
+                evidence_detail="Telegram menu button applied and read back",
+            )
+    except (OSError, OnboardingError) as error:
         raise ProfileError(f"onboarding status not found: {status_path}") from error
-    status["telegram_profile_status"] = "applied"
-    temporary = status_path.with_suffix(".tmp")
-    temporary.write_text(json.dumps(status, indent=2) + "\n")
-    os.chmod(temporary, 0o640)
-    temporary.replace(status_path)
 
 
 def main():
@@ -285,12 +303,18 @@ def main():
             raise ProfileError("owner approval is required; pass --approved")
         if arguments.env_file is None or arguments.status_file is None:
             raise ProfileError("--env-file and --status-file are required")
+        try:
+            validate_status_path(arguments.status_file, "controller")
+        except OnboardingError as error:
+            raise ProfileError(str(error)) from error
 
         token = read_env_value(arguments.env_file, "TELEGRAM_BOT_TOKEN")
         client = TelegramClient(token)
         apply_profile(client, profile)
         verify_profile(client, profile)
-        mark_profile_applied(arguments.status_file)
+        mark_profile_applied(
+            arguments.status_file, profile["menu_button"]["enabled"]
+        )
         print("Telegram bot profile applied and verified.")
     except ProfileError as error:
         print(f"error: {error}", file=sys.stderr)

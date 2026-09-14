@@ -127,14 +127,21 @@
         "onboarding": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["status", "status_path"],
+          "required": [
+            "status",
+            "status_path",
+            "required_remaining",
+            "optional_remaining"
+          ],
           "properties": {
             "status": {
               "enum": ["pending", "in_progress", "complete"]
             },
             "status_path": {
               "const": "aidee/onboarding-status.json"
-            }
+            },
+            "required_remaining": {"type": "integer", "minimum": 0},
+            "optional_remaining": {"type": "integer", "minimum": 0}
           }
         }
       }

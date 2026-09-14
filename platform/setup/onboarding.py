@@ -1,20 +1,17 @@
 #!/usr/bin/env python3
 import argparse
-import json
 import sys
 from pathlib import Path
 
-
-COMPLETE_PROFILE_STATUS = {"applied", "deferred", "skipped"}
-
+from onboarding_state import (
+    OnboardingError,
+    locked_status,
+    onboarding_complete,
+    validate_status_path,
+)
 
 def is_complete(status):
-    return (
-        status.get("telegram_owner_authorized") is True
-        and status.get("telegram_profile_status") in COMPLETE_PROFILE_STATUS
-        and status.get("update_check_status") in {"active", "disabled"}
-        and status.get("dashboard_verified") is True
-    )
+    return onboarding_complete(status)
 
 
 def main():
@@ -23,12 +20,14 @@ def main():
     arguments = parser.parse_args()
 
     try:
-        status = json.loads(arguments.status_file.read_text())
-    except (FileNotFoundError, json.JSONDecodeError) as error:
+        validate_status_path(arguments.status_file, "controller")
+        with locked_status(arguments.status_file, "controller") as status:
+            complete = is_complete(status)
+    except (OSError, OnboardingError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
 
-    if not is_complete(status):
+    if not complete:
         return 1
     print("Controller onboarding is complete.")
     return 0

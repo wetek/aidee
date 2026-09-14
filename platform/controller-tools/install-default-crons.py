@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
 import argparse
-import json
 import os
 import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "setup"))
+from onboarding_state import (  # noqa: E402
+    OnboardingError,
+    mark_step,
+    validate_status_path,
+)
 
 
 UPDATE_JOB_NAME = "Aidee daily update check"
@@ -40,14 +46,17 @@ If any assistant is stopped or unhealthy, or if errors/resource warnings are det
 
 
 def update_status(status_path, update_check=True):
-    status = json.loads(status_path.read_text())
-    if update_check:
-        status["update_check_status"] = "active"
-    status["health_watchdog_status"] = "active"
-    temporary = status_path.with_suffix(".tmp")
-    temporary.write_text(json.dumps(status, indent=2) + "\n")
-    os.chmod(temporary, 0o640)
-    temporary.replace(status_path)
+    detail = "health watchdog and daily update crons verified"
+    if not update_check:
+        detail = "health watchdog verified; owner disabled daily update checks"
+    mark_step(
+        status_path,
+        "controller",
+        "default_crons",
+        "completed",
+        evidence_source="reconciler",
+        evidence_detail=detail,
+    )
 
 
 def run(command):
@@ -97,7 +106,12 @@ def reconcile_job(hermes, existing_output, name, schedule, prompt, skill=None):
             command.extend(["--skill", skill])
         return run(command)
     if name in existing_output:
-        return subprocess.CompletedProcess([], 0, "", "")
+        return subprocess.CompletedProcess(
+            [],
+            1,
+            "",
+            f"cannot identify existing cron job: {name}",
+        )
     command = [
         hermes,
         "cron",
@@ -167,11 +181,22 @@ def main():
 
     if arguments.status_file:
         try:
+            validate_status_path(arguments.status_file, "controller")
+            verified = run([hermes, "cron", "list", "--all"])
+            expected = [WATCHDOG_JOB_NAME]
+            if not arguments.skip_update_check:
+                expected.append(UPDATE_JOB_NAME)
+            if verified.returncode != 0 or any(
+                name not in verified.stdout for name in expected
+            ):
+                raise OnboardingError(
+                    "default cron jobs could not be verified after reconciliation"
+                )
             update_status(
                 arguments.status_file,
                 update_check=not arguments.skip_update_check,
             )
-        except (FileNotFoundError, json.JSONDecodeError) as error:
+        except (OSError, OnboardingError) as error:
             print(f"error: {error}", file=sys.stderr)
             return 1
 

@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 import argparse
-import json
-import os
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "setup"))
+from onboarding_state import (  # noqa: E402
+    OnboardingError,
+    mark_step,
+    validate_status_path,
+)
 
 
 def main():
@@ -17,16 +22,19 @@ def main():
         return 1
 
     try:
-        status = json.loads(arguments.status_file.read_text())
-    except (FileNotFoundError, json.JSONDecodeError) as error:
+        validate_status_path(arguments.status_file, "controller")
+        mark_step(
+            arguments.status_file,
+            "controller",
+            "owner_authorization",
+            "completed",
+            evidence_source="verified_tool",
+            evidence_detail="authorized Telegram access verified",
+        )
+    except (OSError, OnboardingError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
 
-    status["telegram_owner_authorized"] = True
-    temporary = arguments.status_file.with_suffix(".tmp")
-    temporary.write_text(json.dumps(status, indent=2) + "\n")
-    os.chmod(temporary, 0o640)
-    temporary.replace(arguments.status_file)
     print("Telegram owner access marked as verified.")
     return 0
 

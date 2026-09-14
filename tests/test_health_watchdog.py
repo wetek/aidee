@@ -37,7 +37,11 @@ exit 1
             )
             hermes.chmod(0o755)
 
-            status_path = directory / "status.json"
+            status_path = (
+                directory
+                / "fleet/controller/CONTROLLER_ONBOARDING_STATUS.json"
+            )
+            status_path.parent.mkdir(parents=True)
             status_path.write_text(
                 json.dumps(
                     {
@@ -53,6 +57,7 @@ exit 1
                 "PATH": f"{bin_dir}:{os.environ['PATH']}",
                 "AIDEE_TEST_JOBS": str(jobs),
                 "AIDEE_TEST_CALLS": str(calls),
+                "AIDEE_STATE_DIR": str(directory),
             }
 
             command = [
@@ -78,8 +83,8 @@ exit 1
             self.assertEqual(first.returncode, 0, first.stderr)
             self.assertEqual(second.returncode, 0, second.stderr)
             self.assertEqual(
-                json.loads(status_path.read_text())["health_watchdog_status"],
-                "active",
+                json.loads(status_path.read_text())["steps"]["default_crons"]["status"],
+                "pending",
             )
             create_calls = calls.read_text()
             self.assertEqual(create_calls.count("cron create"), 1)

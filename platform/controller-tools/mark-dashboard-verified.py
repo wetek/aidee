@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 import argparse
-import json
-import os
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "setup"))
+from onboarding_state import (  # noqa: E402
+    OnboardingError,
+    mark_step,
+    validate_status_path,
+)
 
 
 def main():
@@ -18,22 +23,25 @@ def main():
         return 1
 
     try:
+        validate_status_path(arguments.status_file, "controller")
         dashboard_url = arguments.dashboard_url_file.read_text().strip()
         allowed_url = dashboard_url.startswith("https://") or (
             dashboard_url == "http://127.0.0.1:9119"
         )
         if not allowed_url:
             raise ValueError("dashboard URL is not an approved private address")
-        status = json.loads(arguments.status_file.read_text())
-    except (FileNotFoundError, json.JSONDecodeError, ValueError) as error:
+        mark_step(
+            arguments.status_file,
+            "controller",
+            "dashboard_phone_access",
+            "completed",
+            evidence_source="owner_confirmation",
+            evidence_detail="owner confirmed the private dashboard loaded on phone",
+        )
+    except (OSError, OnboardingError, ValueError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
 
-    status["dashboard_verified"] = True
-    temporary = arguments.status_file.with_suffix(".tmp")
-    temporary.write_text(json.dumps(status, indent=2) + "\n")
-    os.chmod(temporary, 0o640)
-    temporary.replace(arguments.status_file)
     print("Dashboard phone access marked as verified.")
     return 0
 

@@ -51,6 +51,9 @@ runuser -u "${AIDEE_CONTROLLER_USER}" -- \
     "${HERMES_REPOSITORY}" \
     "${hermes_source}"
 
+runuser -u "${AIDEE_CONTROLLER_USER}" -- \
+  "${script_dir}/apply-hermes-runtime-patch.sh" "${hermes_source}"
+
 # The positional argument expands inside the child shell.
 # shellcheck disable=SC2016
 runuser -u "${AIDEE_CONTROLLER_USER}" -- \

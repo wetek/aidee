@@ -2,7 +2,12 @@
 
 Aidee builds one assistant image per release and reuses its immutable image ID for every assistant on that host.
 
-The image derives from the official Hermes `v2026.9.11` image by digest. Hermes already provides Python, uv, Node.js, npm, npx, Git, SSH, curl, ripgrep, ffmpeg, compiler tools, Playwright, messaging dependencies, and MCP runtimes.
+The image derives from the official Hermes `v2026.9.11` image by digest. Aidee
+applies the checksum-pinned runtime-context patch recorded in
+`platform/HERMES_PATCH_SHA256` and fails the build if the base or patched source
+checksums differ. Hermes already provides Python, uv, Node.js, npm, npx, Git,
+SSH, curl, ripgrep, ffmpeg, compiler tools, Playwright, messaging dependencies,
+and MCP runtimes.
 
 Aidee adds:
 
@@ -11,6 +16,8 @@ Aidee adds:
 - socat for loopback dashboard forwarding.
 - OpenCode 1.18.3.
 - Versioned Aidee skills, instructions, workflows, and defaults.
+- Durable onboarding gate and evidence-marking commands under
+  `/opt/aidee/onboarding`.
 
 The image contains no assistant identity, memory, repository, or credential.
 

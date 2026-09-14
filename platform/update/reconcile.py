@@ -275,20 +275,25 @@ def sync_assistant_state(
             )
         )
         status = json.loads((runtime_dir / ONBOARDING_RELATIVE_PATH).read_text())
-        step_states = {
-            step.get("status")
-            for step in status.get("steps", {}).values()
-            if isinstance(step, dict)
-        }
         if onboarding_complete(status):
             onboarding_status = "complete"
-        elif step_states == {"pending"}:
-            onboarding_status = "pending"
-        else:
+        elif any(
+            step.get("status") == "in_progress"
+            for step in status.get("steps", {}).values()
+            if isinstance(step, dict)
+        ):
             onboarding_status = "in_progress"
+        else:
+            onboarding_status = "pending"
         assistant["onboarding"] = {
             "status": onboarding_status,
             "status_path": str(ONBOARDING_RELATIVE_PATH),
+            "required_remaining": len(
+                status.get("rollup", {}).get("incomplete_required", [])
+            ),
+            "optional_remaining": len(
+                status.get("rollup", {}).get("incomplete_optional", [])
+            ),
         }
         skills = runtime_dir / "skills"
         ensure_directory(skills, uid=CONTAINER_UID, gid=controller_gid)
@@ -329,6 +334,55 @@ def sync_assistant_state(
         if assistant_changes:
             changed[assistant_id] = assistant_changes
     return registry, changed
+
+
+def reconcile_controller_onboarding(candidate, state_root, owner):
+    """Migrate controller state and record only verified local convergence."""
+    setup_dir = candidate / "platform/setup"
+    if str(setup_dir) not in sys.path:
+        sys.path.insert(0, str(setup_dir))
+    from onboarding_state import locked_status, mark_step
+
+    controller_dir = state_root / "fleet/controller"
+    status_path = controller_dir / "CONTROLLER_ONBOARDING_STATUS.json"
+    onboarding_config = None
+    plan_path = state_root / "setup/setup-plan.json"
+    if plan_path.is_file():
+        try:
+            plan = json.loads(plan_path.read_text())
+            controller_plan = plan.get("controller") or {}
+            messaging = controller_plan.get("messaging") or []
+            telegram_plan = controller_plan.get("telegram") or {}
+            onboarding_config = {
+                "telegram_enabled": "telegram" in messaging,
+                "dashboard_menu_enabled": bool(
+                    telegram_plan.get("menu_button", False)
+                ),
+            }
+        except (AttributeError, json.JSONDecodeError):
+            onboarding_config = None
+    with locked_status(status_path, "controller", config=onboarding_config):
+        pass
+    soul = controller_dir / "SOUL.md"
+    template = candidate / "fleet-template/controller/SOUL.md.template"
+    desired_soul = template.read_text().replace("{{ owner_name }}", owner)
+    if not soul.is_file() or soul.read_text() != desired_soul:
+        atomic_write(soul, desired_soul, 0o640)
+    if soul.is_file():
+        with locked_status(status_path, "controller") as status:
+            identity_complete = (
+                status["steps"]["identity_skin"]["status"] == "completed"
+            )
+        if not identity_complete:
+            mark_step(
+                status_path,
+                "controller",
+                "identity_skin",
+                "completed",
+                evidence_source="reconciler",
+                evidence_detail="controller SOUL instructions are installed",
+            )
+    return status_path
 
 
 def create_container_commands(assistant, image_id, state_root, controller_gid):
@@ -523,6 +577,8 @@ def update_registry(registry_path, registry, release, image_id):
             onboarding["status"] = "pending"
         if onboarding.get("status_path") != "aidee/onboarding-status.json":
             onboarding["status_path"] = "aidee/onboarding-status.json"
+        onboarding.setdefault("required_remaining", 0)
+        onboarding.setdefault("optional_remaining", 0)
     rendered = yaml.safe_dump(registry, sort_keys=False)
     changed = registry_path.read_text() != rendered
     if changed:
@@ -593,6 +649,7 @@ def verify(
     controller_user,
     controller_home,
     image_id,
+    expected_registry=None,
 ):
     failures = []
     _, _, controller_gid = controller_account(controller_user)
@@ -618,15 +675,19 @@ def verify(
     expected_hermes = (source / "platform/HERMES_VERSION").read_text().strip()
     if hermes_tag != expected_hermes:
         failures.append(f"controller Hermes is {hermes_tag or 'unknown'}")
-    hermes_dirty = run_controller_command(
+    hermes_patch = run_controller_command(
         runner,
         controller_user,
         controller_home,
-        ["git", "-C", hermes_source, "status", "--porcelain"],
+        [
+            str(source / "platform/scripts/apply-hermes-runtime-patch.sh"),
+            "--check",
+            hermes_source,
+        ],
         check=False,
     )
-    if hermes_dirty.returncode or hermes_dirty.stdout:
-        failures.append("controller Hermes checkout is not clean")
+    if hermes_patch.returncode:
+        failures.append("controller Hermes runtime patch is invalid")
     hermes_binary = runner.run(
         ["readlink", "-f", f"{controller_home}/.local/bin/hermes"], check=False
     ).stdout.strip()
@@ -635,6 +696,26 @@ def verify(
     ).stdout.strip()
     if hermes_binary != f"{hermes_real_source}/venv/bin/hermes":
         failures.append("controller Hermes command does not use the active release")
+    runtime_probe = run_controller_command(
+        runner,
+        controller_user,
+        controller_home,
+        [
+            f"{hermes_real_source}/venv/bin/python",
+            "-c",
+            (
+                "from agent.system_prompt import runtime_context_fingerprint; "
+                "from gateway.run import GatewayRunner; "
+                "from hermes_state import SessionDB; "
+                "assert callable(runtime_context_fingerprint); "
+                "assert callable(GatewayRunner._extract_cache_busting_config); "
+                "assert callable(SessionDB.update_runtime_context)"
+            ),
+        ],
+        check=False,
+    )
+    if runtime_probe.returncode:
+        failures.append("controller Hermes does not import the patched runtime")
     synced_release = (
         Path(controller_home) / ".hermes/aidee-upstream/SYNCED_RELEASE"
     )
@@ -657,13 +738,35 @@ def verify(
     for job in (UPDATE_JOB, WATCHDOG_JOB):
         if job not in cron_result.stdout:
             failures.append(f"controller cron is missing: {job}")
-    registry = load_registry(state_root / "fleet/registry.yaml")
+    controller_status_path = (
+        state_root / "fleet/controller/CONTROLLER_ONBOARDING_STATUS.json"
+    )
+    try:
+        controller_status = json.loads(controller_status_path.read_text())
+        if (
+            controller_status.get("schema_version") != 2
+            or controller_status.get("role") != "controller"
+            or controller_status.get("steps", {})
+            .get("default_crons", {})
+            .get("status")
+            != "completed"
+        ):
+            failures.append("controller onboarding status is invalid")
+    except (OSError, json.JSONDecodeError):
+        failures.append("controller onboarding status is invalid")
+    registry = expected_registry or load_registry(
+        state_root / "fleet/registry.yaml"
+    )
     sys.path.insert(0, str(source / "platform/admin"))
     from assistant_state import (
         ONBOARDING_RELATIVE_PATH,
         STEP_STATES,
         build_soul_document,
     )
+    setup_dir = source / "platform/setup"
+    if str(setup_dir) not in sys.path:
+        sys.path.insert(0, str(setup_dir))
+    from onboarding_state import SCHEMA_VERSION, step_definitions
     owner = owner_name(Path("/etc/aidee/owner.json"))
     for assistant in registry["assistants"]:
         assistant_id = assistant["id"]
@@ -712,16 +815,64 @@ def verify(
         else:
             try:
                 status = json.loads(onboarding.read_text())
-                required = {"identity", "dashboard", "model", "telegram", "repository"}
+                runtime_config = yaml.safe_load(
+                    (runtime / "config.yaml").read_text()
+                ) or {}
+                telegram = (
+                    (runtime_config.get("platforms") or {}).get("telegram") or {}
+                )
+                dashboard = runtime_config.get("dashboard") or {}
+                policy_config = {
+                    "telegram_enabled": bool(telegram.get("enabled", True)),
+                    "dashboard_menu_enabled": bool(dashboard.get("public_url")),
+                }
+                required = {
+                    item["id"]
+                    for item in step_definitions(
+                        "assistant",
+                        assistant.get("kind", "personal"),
+                        policy_config,
+                    )
+                }
                 steps = status.get("steps", {})
-                if not isinstance(steps, dict) or set(steps) != required or any(
+                if (
+                    status.get("schema_version") != SCHEMA_VERSION
+                    or status.get("role") != "assistant"
+                    or not isinstance(steps, dict)
+                    or set(steps) != required
+                    or any(
                     not isinstance(step, dict)
                     or step.get("status") not in STEP_STATES
                     for step in steps.values()
+                    )
                 ):
                     failures.append(f"onboarding status invalid: {assistant_id}")
+                rollup = status.get("rollup") or {}
+                registry_rollup = assistant.get("onboarding") or {}
+                if (
+                    registry_rollup.get("required_remaining")
+                    != len(rollup.get("incomplete_required", []))
+                    or registry_rollup.get("optional_remaining")
+                    != len(rollup.get("incomplete_optional", []))
+                ):
+                    failures.append(
+                        f"onboarding registry rollup mismatch: {assistant_id}"
+                    )
             except json.JSONDecodeError:
                 failures.append(f"onboarding status invalid: {assistant_id}")
+        tools = runner.run(
+            [
+                "docker",
+                "exec",
+                name,
+                "test",
+                "-x",
+                "/opt/aidee/onboarding/onboarding-gate.py",
+            ],
+            check=False,
+        )
+        if tools.returncode:
+            failures.append(f"onboarding tools missing: {assistant_id}")
         fleet_dir = safe_state_path(
             state_root / "fleet",
             assistant.get("state_path") or f"assistants/{assistant_id}",
@@ -868,14 +1019,23 @@ def main():
             "--skip-fleet-sync",
         ],
     )
+    controller_status = reconcile_controller_onboarding(
+        source,
+        arguments.state_root,
+        owner_name(Path("/etc/aidee/owner.json")),
+    )
     run_controller_command(
         runner,
         arguments.controller_user,
         controller_home,
         [
+            "env",
+            f"AIDEE_STATE_DIR={arguments.state_root}",
             "python3",
             str(source / "platform/controller-tools/install-default-crons.py"),
             "--approved",
+            "--status-file",
+            str(controller_status),
         ],
     )
     registry, changed_files = sync_assistant_state(
@@ -915,6 +1075,7 @@ def main():
             arguments.controller_user,
             controller_home,
             image_id,
+            registry,
         )
         update_registry(registry_path, registry, arguments.release, image_id)
     except Exception:

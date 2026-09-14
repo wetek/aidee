@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-AIDEE_RELEASE="v0.1.0-alpha.13"
+AIDEE_RELEASE="v0.1.0-alpha.14"
 AIDEE_REPOSITORY="https://github.com/wetek/aidee.git"
 AIDEE_CONTROLLER_USER="${AIDEE_CONTROLLER_USER:-aidee-controller}"
 AIDEE_STATE_DIR="${AIDEE_STATE_DIR:-/var/lib/aidee}"
 AIDEE_SETUP_DIR="${AIDEE_SETUP_DIR:-${AIDEE_STATE_DIR}/setup}"
+export AIDEE_STATE_DIR
 
 source_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 plan_tool="${source_root}/platform/setup/plan.py"
@@ -381,25 +382,34 @@ EOF
         echo "Installed release: ${AIDEE_RELEASE}"
       } >> "${summary}"
 
-      telegram_profile_status="pending"
-      telegram_owner_authorized="false"
-      update_check_status="pending"
-      if [[ "${messaging}" != *'"telegram"'* ]]; then
-        telegram_profile_status="skipped"
-        telegram_owner_authorized="true"
-      fi
-      if [[ "${daily_update_check}" != "true" ]]; then
-        update_check_status="disabled"
-      fi
       onboarding_status="${controller_state}/CONTROLLER_ONBOARDING_STATUS.json"
-      cat > "${onboarding_status}" <<EOF
-{
-  "telegram_owner_authorized": ${telegram_owner_authorized},
-  "telegram_profile_status": "${telegram_profile_status}",
-  "update_check_status": "${update_check_status}",
-  "dashboard_verified": false
-}
-EOF
+      onboarding_gate_args=(
+        --status-file "${onboarding_status}"
+        --role controller
+        --mode inspect
+      )
+      if [[ "${messaging}" != *'"telegram"'* ]]; then
+        onboarding_gate_args+=(--telegram-disabled)
+      fi
+      if [[ "${telegram_menu_button}" != "true" ]]; then
+        onboarding_gate_args+=(--menu-disabled)
+      fi
+      python3 /opt/aidee/source/platform/setup/onboarding-gate.py \
+        "${onboarding_gate_args[@]}" >/dev/null
+      python3 /opt/aidee/source/platform/setup/mark-onboarding-step.py \
+        --status-file "${onboarding_status}" \
+        --role controller \
+        --step identity_skin \
+        --status completed \
+        --evidence-source reconciler \
+        --evidence-detail "controller identity instructions installed" >/dev/null
+      python3 /opt/aidee/source/platform/setup/mark-onboarding-step.py \
+        --status-file "${onboarding_status}" \
+        --role controller \
+        --step model_messaging \
+        --status completed \
+        --evidence-source verified_tool \
+        --evidence-detail "configured gateway started and passed setup verification" >/dev/null
 
       controller_cron_args=(--approved --status-file "${onboarding_status}")
       if [[ "${daily_update_check}" != "true" ]]; then
@@ -426,8 +436,8 @@ Daily update check: ${daily_update_check}
 3. Ask the owner to run /whoami in Telegram and confirm authorized access.
 4. Run /opt/aidee/source/platform/controller-tools/mark-telegram-authorized.py.
 5. Set this chat as home channel (/sethome). Confirm default update check and watchdog crons are active.
-6. Offer to set up the Telegram bot profile now, later, or not at all.
-7. If the owner chooses later or skip, record it with set-telegram-profile-status.py.
+6. Offer to set up the Telegram bot profile and menu button now or keep their current state.
+7. If the owner keeps them, record an owner-confirmed skip with set-telegram-profile-status.py.
 8. If the owner chooses now, draft the name, descriptions, commands, and avatar.
 9. Detect whether an image-generation tool is available.
 10. If available, ask the owner for an avatar style and generate options.
@@ -451,8 +461,11 @@ Give these steps when the dashboard URL is an https://<device>.<tailnet>.ts.net 
 EOF
 
       chown "${AIDEE_CONTROLLER_USER}:${AIDEE_CONTROLLER_USER}" \
-        "${summary}" "${onboarding_status}" "${onboarding}"
+        "${summary}" "${onboarding_status}" "${onboarding}" \
+        "${controller_state}/.CONTROLLER_ONBOARDING_STATUS.json.lock"
       chmod 0640 "${summary}" "${onboarding_status}" "${onboarding}"
+      chmod 0660 \
+        "${controller_state}/.CONTROLLER_ONBOARDING_STATUS.json.lock"
       set_phase "awaiting_controller_onboarding"
       ;;
 

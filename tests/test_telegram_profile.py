@@ -106,8 +106,15 @@ class TelegramProfileTests(unittest.TestCase):
             telegram_profile.mark_profile_applied(status_path)
 
             status = json.loads(status_path.read_text())
-            self.assertEqual(status["telegram_profile_status"], "applied")
-            self.assertFalse(status["dashboard_verified"])
+            self.assertEqual(
+                status["steps"]["telegram_profile_avatar"]["status"], "completed"
+            )
+            self.assertEqual(
+                status["steps"]["telegram_menu_button"]["status"], "completed"
+            )
+            self.assertEqual(
+                status["steps"]["dashboard_phone_access"]["status"], "pending"
+            )
 
     def test_rejects_non_https_menu_url(self):
         with tempfile.TemporaryDirectory() as temporary_directory:

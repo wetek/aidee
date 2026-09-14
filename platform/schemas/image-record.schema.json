@@ -11,6 +11,8 @@
     "image_id",
     "image_size",
     "hermes_version",
+    "hermes_commit",
+    "hermes_patch_sha256",
     "opencode_version",
     "validation"
   ],
@@ -37,6 +39,12 @@
     },
     "hermes_version": {
       "const": "v2026.9.11"
+    },
+    "hermes_commit": {
+      "const": "939e45c91d751fadd94dcd1b873ac3cb44846213"
+    },
+    "hermes_patch_sha256": {
+      "const": "168c5dbf386b8570764bb8730bc113d31f45c4cb76498a987bb1d1a09b934701"
     },
     "opencode_version": {
       "const": "1.18.3"

@@ -37,4 +37,7 @@ Each release will include:
 and assistant onboarding progress, rollback-safe container replacement, and
 controller-only update scheduling.
 
+`v0.1.0-alpha.14` adds managed Hermes prompt and agent-cache invalidation plus
+locked, resumable controller and assistant onboarding.
+
 

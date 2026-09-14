@@ -44,7 +44,10 @@ Hermes supports multiple profiles in one container, but Aidee uses separate cont
 
 Every assistant on one Aidee release uses the same immutable image ID. Docker stores shared read-only layers once. Each assistant still has a separate container and writable state.
 
-The image derives from a pinned official Hermes image. It adds GitHub CLI, jq, OpenCode, socat, and Aidee shared skills. It contains no identity, memory, project repository, or credential.
+The image derives from a pinned official Hermes image. Alpha 14 applies one
+checksum-verified temporary Hermes runtime-context patch to the exact pinned
+source. It adds GitHub CLI, jq, OpenCode, socat, and Aidee shared skills. It
+contains no identity, memory, project repository, or credential.
 
 The root-owned image record under `/etc/aidee/images` is authoritative. Controller-written requests choose an Aidee version, not a Docker image or build argument.
 
@@ -118,10 +121,13 @@ Dashboards and APIs bind to loopback by default. Tailscale Serve is the default 
 
 ## Controller onboarding
 
-The controller completes first-run onboarding before project or assistant work:
+The controller runs a locked durable gate before operational work. An
+incomplete required step produces one resume offer. `Not now` suppresses
+repeat offers until manual reopen or a later schema adds a required step.
+After `Resume now`, the controller completes this flow:
 
 1. Authorize the owner through Telegram pairing or an explicit allowlist.
-2. Offer to configure the bot profile now, later, or not at all.
+2. Offer to configure the bot profile or explicitly keep the current profile.
 3. If accepted, draft the bot name, descriptions, supported commands, and avatar.
 4. Generate avatar options when image generation is available, or request a JPG upload.
 5. Show the full profile and wait for approval.
@@ -130,7 +136,16 @@ The controller completes first-run onboarding before project or assistant work:
 8. Ask the owner to open the dashboard from their phone.
 9. Create the owner-approved daily update check when selected.
 
-Controller setup is complete only after Telegram owner access, the owner's branding choice, phone dashboard access, and the update-check choice are recorded.
+Controller setup is complete only after every step is `completed` or
+owner-confirmed `skipped`. Required steps control the resume offer. Optional
+steps remain part of the resumed flow and block the complete rollup until
+resolved.
+
+The same versioned module defines assistant steps by role, assistant kind, and
+non-secret configuration. Coding and project assistants must resolve repository
+and coding-tool setup. Personal and client assistants may skip those steps with
+a recorded reason. Atomic file replacement under `fcntl` locking prevents two
+concurrent Telegram turns from both producing an offer.
 
 The daily update job performs preview-only discovery. It stays silent when no
 update exists and gives the owner the documented SSH preview command for a new

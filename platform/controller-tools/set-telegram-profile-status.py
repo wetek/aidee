@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
 import argparse
-import json
-import os
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "setup"))
+from onboarding_state import (  # noqa: E402
+    OnboardingError,
+    locked_status,
+    mark_step,
+    validate_status_path,
+)
 
 
 ALLOWED_STATUS = {"deferred", "skipped"}
@@ -20,25 +26,43 @@ def main():
         print("error: owner confirmation is required", file=sys.stderr)
         return 1
 
+    target = "pending" if arguments.status == "deferred" else "skipped"
     try:
-        status = json.loads(arguments.status_file.read_text())
-    except (FileNotFoundError, json.JSONDecodeError) as error:
+        validate_status_path(arguments.status_file, "controller")
+        with locked_status(arguments.status_file, "controller") as state:
+            menu_applicable = state["steps"]["telegram_menu_button"]["applicable"]
+        step_ids = ["telegram_profile_avatar"]
+        if menu_applicable:
+            step_ids.append("telegram_menu_button")
+        for step_id in step_ids:
+            mark_step(
+                arguments.status_file,
+                "controller",
+                step_id,
+                target,
+                evidence_source=(
+                    "owner_confirmation" if target == "skipped" else None
+                ),
+                evidence_detail=(
+                    "owner chose to keep the current Telegram profile setup"
+                    if target == "skipped"
+                    else None
+                ),
+                reason=(
+                    "Owner chose to keep the current Telegram profile setup"
+                    if target == "skipped"
+                    else None
+                ),
+                allowed_from=(
+                    {"pending", "in_progress", "skipped"}
+                    if target == "skipped"
+                    else {"pending", "in_progress"}
+                ),
+            )
+    except (OSError, OnboardingError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
 
-    current = status.get("telegram_profile_status")
-    if current not in {"pending", "deferred"}:
-        print(
-            f"error: cannot change Telegram profile status from {current}",
-            file=sys.stderr,
-        )
-        return 1
-
-    status["telegram_profile_status"] = arguments.status
-    temporary = arguments.status_file.with_suffix(".tmp")
-    temporary.write_text(json.dumps(status, indent=2) + "\n")
-    os.chmod(temporary, 0o640)
-    temporary.replace(arguments.status_file)
     print(f"Telegram profile setup marked as {arguments.status}.")
     return 0
 

@@ -4,10 +4,19 @@ These rules govern how Aidee assistants handle first-boot identity setup, Telegr
 
 ## Durable progress and resumption
 
-- Read `/opt/data/aidee/onboarding-status.json` before operational work.
-- On each later interaction, resume the first pending or in-progress step in this order: identity, dashboard, model, Telegram, repository.
-- Use interactive Telegram choices for decisions and confirmations.
-- Mark a step complete only after direct verification or explicit owner confirmation. Record deferred and not-applicable choices as such.
+- Before operational work, run `/opt/aidee/onboarding/onboarding-gate.py` with
+  `--status-file /opt/data/aidee/onboarding-status.json`, `--role assistant`,
+  the configured `--assistant-kind`, and `--mode decide`.
+- If the result is `offer`, ask one interactive clarify question with
+  `Resume now` and `Not now`. Record the answer with `--mode resume-now` or
+  `--mode not-now`.
+- Resume the first incomplete required step only after `Resume now`. Offer
+  optional steps inside that resumed flow.
+- Use `/opt/aidee/onboarding/mark-onboarding-step.py` to record every step as
+  `completed` or explicitly `skipped`. A skip requires owner confirmation and
+  a reason.
+- If the gate returns `silent` or `complete`, do not ask again. Never schedule
+  a time-based reminder.
 - Never infer that an external account, credential, bot setting, dashboard check, or repository connection succeeded.
 - Preserve existing `config.yaml`, `.env`, credentials, memories, and repositories while onboarding resumes.
 

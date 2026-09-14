@@ -30,7 +30,11 @@ if [[ "$1" == "cron" && "$2" == "create" ]]; then
   shift 2
   while (( $# > 0 )); do
     if [[ "$1" == "--name" ]]; then
-      printf '%s\n' "$2" >> "$AIDEE_TEST_JOBS"
+      if [[ "$2" == "Aidee daily update check" ]]; then
+        printf 'abcdef123456 [active]\n  Name: %s\n' "$2" >> "$AIDEE_TEST_JOBS"
+      else
+        printf 'fedcba654321 [active]\n  Name: %s\n' "$2" >> "$AIDEE_TEST_JOBS"
+      fi
       break
     fi
     shift
@@ -50,13 +54,18 @@ exit 1
             "PATH": f"{bin_dir}:{os.environ['PATH']}",
             "AIDEE_TEST_JOBS": str(jobs),
             "AIDEE_TEST_CALLS": str(calls),
+            "AIDEE_STATE_DIR": str(directory),
         }, calls
 
     def test_creates_both_default_crons_when_approved(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             directory = Path(temporary_directory)
             environment, calls = self.setUpHermes(directory)
-            status_path = directory / "status.json"
+            status_path = (
+                directory
+                / "fleet/controller/CONTROLLER_ONBOARDING_STATUS.json"
+            )
+            status_path.parent.mkdir(parents=True)
             status_path.write_text(
                 json.dumps(
                     {
@@ -92,8 +101,10 @@ exit 1
             self.assertEqual(second.returncode, 0, second.stderr)
 
             status = json.loads(status_path.read_text())
-            self.assertEqual(status["update_check_status"], "active")
-            self.assertEqual(status["health_watchdog_status"], "active")
+            self.assertEqual(status["schema_version"], 2)
+            self.assertEqual(
+                status["steps"]["default_crons"]["status"], "completed"
+            )
 
             create_calls = calls.read_text()
             self.assertEqual(create_calls.count("cron create"), 2)
@@ -108,7 +119,11 @@ exit 1
         with tempfile.TemporaryDirectory() as temporary_directory:
             directory = Path(temporary_directory)
             environment, calls = self.setUpHermes(directory)
-            status_path = directory / "status.json"
+            status_path = (
+                directory
+                / "fleet/controller/CONTROLLER_ONBOARDING_STATUS.json"
+            )
+            status_path.parent.mkdir(parents=True)
             status_path.write_text(
                 json.dumps(
                     {
@@ -137,8 +152,9 @@ exit 1
 
             self.assertEqual(result.returncode, 0, result.stderr)
             status = json.loads(status_path.read_text())
-            self.assertEqual(status["update_check_status"], "disabled")
-            self.assertEqual(status["health_watchdog_status"], "active")
+            self.assertEqual(
+                status["steps"]["default_crons"]["status"], "completed"
+            )
 
             create_calls = calls.read_text()
             self.assertEqual(create_calls.count("cron create"), 1)

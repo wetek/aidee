@@ -1,37 +1,225 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:aidee:schema:assistant-onboarding-status:1",
-  "title": "Aidee Assistant Onboarding Status",
+  "$id": "urn:aidee:schema:onboarding-status:2",
+  "title": "Aidee Onboarding Status",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "steps"],
+  "required": [
+    "schema_version",
+    "role",
+    "assistant_kind",
+    "context",
+    "created_at",
+    "updated_at",
+    "prompt",
+    "steps",
+    "rollup"
+  ],
   "properties": {
-    "schema_version": {"const": 1},
-    "steps": {
+    "schema_version": {"const": 2},
+    "role": {"enum": ["controller", "assistant"]},
+    "assistant_kind": {
+      "enum": ["personal", "coding", "client", "project", null]
+    },
+    "context": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["identity", "dashboard", "model", "telegram", "repository"],
+      "required": [
+        "telegram_enabled",
+        "dashboard_menu_enabled",
+        "identity_skin_enabled"
+      ],
       "properties": {
-        "identity": {"$ref": "#/$defs/step"},
-        "dashboard": {"$ref": "#/$defs/step"},
-        "model": {"$ref": "#/$defs/step"},
-        "telegram": {"$ref": "#/$defs/step"},
-        "repository": {"$ref": "#/$defs/step"}
+        "telegram_enabled": {"type": "boolean"},
+        "dashboard_menu_enabled": {"type": "boolean"},
+        "identity_skin_enabled": {"type": "boolean"}
+      }
+    },
+    "created_at": {"type": "string"},
+    "updated_at": {"type": "string"},
+    "prompt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "last_prompted_at",
+        "required_fingerprint",
+        "response",
+        "responded_at"
+      ],
+      "properties": {
+        "version": {"type": "integer", "minimum": 1},
+        "last_prompted_at": {"type": ["string", "null"]},
+        "required_fingerprint": {"type": ["string", "null"]},
+        "response": {
+          "enum": ["resume_now", "not_now", null]
+        },
+        "responded_at": {"type": ["string", "null"]}
+      }
+    },
+    "steps": {
+      "type": "object",
+      "additionalProperties": {"$ref": "#/$defs/step"}
+    },
+    "rollup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "incomplete_required",
+        "incomplete_optional",
+        "complete"
+      ],
+      "properties": {
+        "status": {"enum": ["pending", "in_progress", "complete"]},
+        "incomplete_required": {
+          "type": "array",
+          "items": {"type": "string"},
+          "uniqueItems": true
+        },
+        "incomplete_optional": {
+          "type": "array",
+          "items": {"type": "string"},
+          "uniqueItems": true
+        },
+        "complete": {"type": "boolean"}
       }
     }
   },
   "$defs": {
     "step": {
       "type": "object",
-      "additionalProperties": true,
-      "required": ["status"],
+      "additionalProperties": false,
+      "required": [
+        "required",
+        "applicable",
+        "evidence_policy",
+        "status",
+        "updated_at",
+        "reason",
+        "note",
+        "evidence"
+      ],
       "properties": {
+        "required": {"type": "boolean"},
+        "applicable": {"type": "boolean"},
+        "evidence_policy": {"enum": ["local", "external"]},
         "status": {
-          "enum": ["pending", "in_progress", "complete", "deferred", "not_applicable"]
+          "enum": ["pending", "in_progress", "completed", "skipped"]
         },
-        "confirmed_at": {"type": "string"},
-        "note": {"type": "string"}
+        "updated_at": {"type": "string"},
+        "reason": {"type": ["string", "null"], "maxLength": 500},
+        "note": {"type": ["string", "null"], "maxLength": 500},
+        "evidence": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["source", "detail", "recorded_at"],
+            "properties": {
+              "source": {
+                "enum": ["owner_confirmation", "verified_tool", "reconciler"]
+              },
+              "detail": {"type": "string", "maxLength": 500},
+              "recorded_at": {"type": "string"}
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"status": {"const": "skipped"}},
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "reason": {"type": "string", "minLength": 1, "maxLength": 500}
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {"status": {"const": "completed"}},
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "reason": {"type": "null"},
+              "evidence": {"minItems": 1}
+            }
+          }
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"role": {"const": "controller"}}},
+      "then": {
+        "properties": {
+          "assistant_kind": {"type": "null"},
+          "steps": {
+            "minProperties": 7,
+            "maxProperties": 7,
+            "propertyNames": {
+              "enum": [
+                "owner_authorization",
+                "default_crons",
+                "identity_skin",
+                "telegram_profile_avatar",
+                "telegram_menu_button",
+                "dashboard_phone_access",
+                "model_messaging"
+              ]
+            },
+            "required": [
+              "owner_authorization",
+              "default_crons",
+              "identity_skin",
+              "telegram_profile_avatar",
+              "telegram_menu_button",
+              "dashboard_phone_access",
+              "model_messaging"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {"properties": {"role": {"const": "assistant"}}},
+      "then": {
+        "properties": {
+          "assistant_kind": {"type": "string"},
+          "steps": {
+            "minProperties": 8,
+            "maxProperties": 8,
+            "propertyNames": {
+              "enum": [
+                "identity",
+                "dashboard_branding",
+                "model_messaging",
+                "telegram_profile_avatar",
+                "telegram_menu_button",
+                "owner_authorization",
+                "repositories",
+                "coding_tools_scripts"
+              ]
+            },
+            "required": [
+              "identity",
+              "dashboard_branding",
+              "model_messaging",
+              "telegram_profile_avatar",
+              "telegram_menu_button",
+              "owner_authorization",
+              "repositories",
+              "coding_tools_scripts"
+            ]
+          }
+        }
       }
     }
-  }
+  ]
 }

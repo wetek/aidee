@@ -4,6 +4,7 @@ import os
 import re
 import stat
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -13,6 +14,8 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCAL_ONLY_DIRECTORIES = {".agents", ".cursor", ".git", ".venv"}
+sys.path.insert(0, str(ROOT / "platform/setup"))
+from onboarding_state import default_status  # noqa: E402
 
 
 def load_json(path: Path):
@@ -83,25 +86,24 @@ def validate_schemas():
     jsonschema.validate(telegram_profile, telegram_profile_schema)
     jsonschema.validate(
         {
-            "aidee_version": "v0.1.0-alpha.13",
+            "aidee_version": "v0.1.0-alpha.14",
             "source_commit": "a" * 40,
             "tag": "aidee-assistant:0.1.0-alpha.11-aaaaaaaaaaaa",
             "image_id": "sha256:" + "b" * 64,
             "image_size": 1,
             "hermes_version": "v2026.9.11",
+            "hermes_commit": "939e45c91d751fadd94dcd1b873ac3cb44846213",
+            "hermes_patch_sha256": (
+                "168c5dbf386b8570764bb8730bc113d3"
+                "1f45c4cb76498a987bb1d1a09b934701"
+            ),
             "opencode_version": "1.18.3",
             "validation": "validated",
         },
         image_record_schema,
     )
     jsonschema.validate(
-        {
-            "schema_version": 1,
-            "steps": {
-                name: {"status": "pending"}
-                for name in ("identity", "dashboard", "model", "telegram", "repository")
-            },
-        },
+        default_status("assistant", "personal"),
         onboarding_schema,
     )
 
@@ -213,8 +215,8 @@ def validate_setup_guidance():
     ]:
         if required_text not in setup:
             raise AssertionError(f"Setup handoff is missing: {required_text}")
-    if latest != "v0.1.0-alpha.13":
-        raise AssertionError("LATEST does not name the Alpha 13 release")
+    if latest != "v0.1.0-alpha.14":
+        raise AssertionError("LATEST does not name the Alpha 14 release")
     if f'"release": "{latest}"' not in setup:
         raise AssertionError("Setup guide does not use the LATEST release")
 

@@ -20,6 +20,8 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repository_root="$(cd -- "${script_dir}/../.." && pwd)"
 version="$(<"${repository_root}/LATEST")"
 hermes_version="$(<"${repository_root}/platform/HERMES_VERSION")"
+hermes_commit="$(<"${repository_root}/platform/HERMES_COMMIT")"
+hermes_patch_sha256="$(<"${repository_root}/platform/HERMES_PATCH_SHA256")"
 source_commit="$(git -C "${repository_root}" rev-parse HEAD)"
 tag="aidee-assistant:${version#v}-${source_commit:0:12}"
 record_dir="/etc/aidee/images"
@@ -52,6 +54,14 @@ if [[ -n "${existing_id}" && "${rebuild}" != true ]]; then
     docker image inspect "${tag}" \
       --format '{{index .Config.Labels "io.aidee.hermes.version"}}'
   )"
+  actual_hermes_commit="$(
+    docker image inspect "${tag}" \
+      --format '{{index .Config.Labels "io.aidee.hermes.commit"}}'
+  )"
+  actual_hermes_patch="$(
+    docker image inspect "${tag}" \
+      --format '{{index .Config.Labels "io.aidee.hermes.patch-sha256"}}'
+  )"
   if [[ "${actual_label}" != "${expected_label}" ]]; then
     echo "error: existing image has an unexpected Aidee version label" >&2
     exit 1
@@ -64,12 +74,20 @@ if [[ -n "${existing_id}" && "${rebuild}" != true ]]; then
     echo "error: existing image has an unexpected Hermes version label" >&2
     exit 1
   fi
+  if [[ "${actual_hermes_commit}" != "${hermes_commit}" ]] ||
+    [[ "${actual_hermes_patch}" != "${hermes_patch_sha256}" ]]
+  then
+    echo "error: existing image has unexpected Hermes patch provenance" >&2
+    exit 1
+  fi
 else
   docker build \
     --file "${repository_root}/platform/container/Dockerfile" \
     --build-arg "AIDEE_VERSION=${version}" \
     --build-arg "AIDEE_SOURCE_COMMIT=${source_commit}" \
     --build-arg "HERMES_VERSION=${hermes_version}" \
+    --build-arg "HERMES_COMMIT=${hermes_commit}" \
+    --build-arg "HERMES_PATCH_SHA256=${hermes_patch_sha256}" \
     --tag "${tag}" \
     "${repository_root}"
 fi
@@ -80,12 +98,22 @@ hermes_version="$(
   docker image inspect "${tag}" \
     --format '{{index .Config.Labels "io.aidee.hermes.version"}}'
 )"
+hermes_commit="$(
+  docker image inspect "${tag}" \
+    --format '{{index .Config.Labels "io.aidee.hermes.commit"}}'
+)"
+hermes_patch_sha256="$(
+  docker image inspect "${tag}" \
+    --format '{{index .Config.Labels "io.aidee.hermes.patch-sha256"}}'
+)"
 opencode_version="$(
   docker image inspect "${tag}" \
     --format '{{index .Config.Labels "io.aidee.opencode.version"}}'
 )"
 
 install -d -m 0755 -o root -g root "${record_dir}"
+temporary="${record}.tmp.$$"
+trap 'rm -f "${temporary}"' EXIT
 jq -n \
   --arg aidee_version "${version}" \
   --arg source_commit "${source_commit}" \
@@ -93,6 +121,8 @@ jq -n \
   --arg image_id "${image_id}" \
   --argjson image_size "${image_size}" \
   --arg hermes_version "${hermes_version}" \
+  --arg hermes_commit "${hermes_commit}" \
+  --arg hermes_patch_sha256 "${hermes_patch_sha256}" \
   --arg opencode_version "${opencode_version}" \
   '{
     aidee_version: $aidee_version,
@@ -101,10 +131,14 @@ jq -n \
     image_id: $image_id,
     image_size: $image_size,
     hermes_version: $hermes_version,
+    hermes_commit: $hermes_commit,
+    hermes_patch_sha256: $hermes_patch_sha256,
     opencode_version: $opencode_version,
     validation: "built"
-  }' > "${record}"
-chmod 0644 "${record}"
+  }' > "${temporary}"
+chmod 0644 "${temporary}"
+mv "${temporary}" "${record}"
+trap - EXIT
 
 echo "Aidee assistant image ready."
 echo "Version: ${version}"

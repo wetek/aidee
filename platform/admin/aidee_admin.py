@@ -21,6 +21,7 @@ from assistant_state import (
     build_soul_document,
     default_assistant_config,
     default_onboarding_status,
+    mark_step,
 )
 
 
@@ -387,7 +388,17 @@ def create_assistant_state(assistant, image_id, dashboard_url):
     )
     write_text(
         runtime_dir / "aidee/onboarding-status.json",
-        json.dumps(default_onboarding_status(), indent=2) + "\n",
+        json.dumps(
+            default_onboarding_status(
+                assistant.get("kind", "personal"),
+                {
+                    "telegram_enabled": True,
+                    "dashboard_menu_enabled": bool(dashboard_url),
+                },
+            ),
+            indent=2,
+        )
+        + "\n",
         CONTAINER_UID,
         controller_gid,
     )
@@ -402,6 +413,19 @@ def create_assistant_state(assistant, image_id, dashboard_url):
         yaml.safe_dump(skin_content, sort_keys=False),
         CONTAINER_UID,
         controller_gid,
+    )
+    mark_step(
+        runtime_dir / "aidee/onboarding-status.json",
+        "assistant",
+        "dashboard_branding",
+        "completed",
+        assistant_kind=assistant.get("kind", "personal"),
+        config={
+            "telegram_enabled": True,
+            "dashboard_menu_enabled": bool(dashboard_url),
+        },
+        evidence_source="reconciler",
+        evidence_detail="display skin and branding match assistant identity",
     )
     inherited_creds = controller_dashboard_credentials()
     if inherited_creds:
@@ -478,6 +502,16 @@ def update_registry(assistant, image_id, dashboard_url):
     registry = yaml.safe_load(registry_path.read_text())
     if any(item["id"] == assistant["id"] for item in registry["assistants"]):
         raise AdminError(f"assistant is already registered: {assistant['id']}")
+    status_path = (
+        STATE_ROOT
+        / f"runtime/assistants/{assistant['id']}/data/aidee/onboarding-status.json"
+    )
+    try:
+        onboarding = json.loads(status_path.read_text())["rollup"]
+    except (KeyError, OSError, json.JSONDecodeError) as error:
+        raise AdminError(
+            f"assistant onboarding status is unavailable: {status_path}"
+        ) from error
     registry["assistants"].append(
         {
             "id": assistant["id"],
@@ -509,6 +543,8 @@ def update_registry(assistant, image_id, dashboard_url):
             "onboarding": {
                 "status": "pending",
                 "status_path": "aidee/onboarding-status.json",
+                "required_remaining": len(onboarding["incomplete_required"]),
+                "optional_remaining": len(onboarding["incomplete_optional"]),
             },
         }
     )

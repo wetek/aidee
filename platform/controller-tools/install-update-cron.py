@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
 import argparse
-import json
 import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "setup"))
+from onboarding_state import (  # noqa: E402
+    OnboardingError,
+    locked_status,
+    mark_step,
+    validate_status_path,
+)
 
 JOB_NAME = "Aidee daily update check"
 SCHEDULE = "every 24h"
@@ -25,13 +31,18 @@ Give the owner the documented SSH preview command. Do not apply the update,
 use sudo, or modify root-owned files during this cron run."""
 
 
-def update_status(status_path):
-    status = json.loads(status_path.read_text())
-    status["update_check_status"] = "active"
-    temporary = status_path.with_suffix(".tmp")
-    temporary.write_text(json.dumps(status, indent=2) + "\n")
-    os.chmod(temporary, 0o640)
-    temporary.replace(status_path)
+def update_status(status_path, all_default_crons_verified):
+    with locked_status(status_path, "controller"):
+        pass
+    if all_default_crons_verified:
+        mark_step(
+            status_path,
+            "controller",
+            "default_crons",
+            "completed",
+            evidence_source="reconciler",
+            evidence_detail="health watchdog and daily update crons verified",
+        )
 
 
 def run(command):
@@ -84,8 +95,15 @@ def main():
 
     if arguments.status_file:
         try:
-            update_status(arguments.status_file)
-        except (FileNotFoundError, json.JSONDecodeError) as error:
+            validate_status_path(arguments.status_file, "controller")
+            verified = run([hermes, "cron", "list", "--all"])
+            update_status(
+                arguments.status_file,
+                verified.returncode == 0
+                and JOB_NAME in verified.stdout
+                and "Aidee fleet health watchdog" in verified.stdout,
+            )
+        except (OSError, OnboardingError) as error:
             print(f"error: {error}", file=sys.stderr)
             return 1
 

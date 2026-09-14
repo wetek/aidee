@@ -1,8 +1,8 @@
 # Update an existing Aidee controller
 
-These instructions are for an existing Aidee VPS. Alpha 13 adds one owner-facing
-preview and apply command for the host, controller, and every registered
-assistant. Run it from the owner's SSH terminal with sudo.
+These instructions are for an existing Aidee VPS. Alpha 14 refreshes managed
+Hermes prompts after controller or assistant runtime instructions change. Run
+the fleet update from the owner's SSH terminal with sudo.
 
 ## Rules
 
@@ -22,23 +22,23 @@ assistant. Run it from the owner's SSH terminal with sudo.
 
 ### One-time bootstrap from Alpha 12 or older
 
-Older releases do not contain the fleet updater. Fetch the exact Alpha 13 tag
+Older releases do not contain the fleet updater. Fetch the exact Alpha 14 tag
 and preview it:
 
 ~~~bash
 sudo install -d -m 0755 /opt/aidee/releases
-sudo git clone --branch v0.1.0-alpha.13 --depth 1 \
+sudo git clone --branch v0.1.0-alpha.14 --depth 1 \
   https://github.com/wetek/aidee.git \
-  /opt/aidee/releases/v0.1.0-alpha.13
-sudo /opt/aidee/releases/v0.1.0-alpha.13/platform/scripts/update-host.sh \
-  --release v0.1.0-alpha.13 --preview
+  /opt/aidee/releases/v0.1.0-alpha.14
+sudo /opt/aidee/releases/v0.1.0-alpha.14/platform/scripts/update-host.sh \
+  --release v0.1.0-alpha.14 --preview
 ~~~
 
 After reviewing the preview and explicitly approving it, run:
 
 ~~~bash
-sudo /opt/aidee/releases/v0.1.0-alpha.13/platform/scripts/update-host.sh \
-  --release v0.1.0-alpha.13 --apply --approved
+sudo /opt/aidee/releases/v0.1.0-alpha.14/platform/scripts/update-host.sh \
+  --release v0.1.0-alpha.14 --apply --approved
 ~~~
 
 ### Future updates
@@ -61,11 +61,27 @@ Preview may fetch the release tag, but it does not change active state. Apply
 refreshes root-owned services, controller knowledge and Hermes, controller-only
 default crons, the validated assistant image, and all registered assistants.
 It preserves bind-mounted runtime data and rolls back failed container
-replacement.
+replacement. Existing Hermes sessions keep their message history. On the next
+turn after a managed SOUL or tool-context change, Hermes rebuilds and persists
+the effective system prompt and tool list.
 
 ## Report
 
-Report:
+Inspect the controller's durable decision and incomplete steps:
+
+~~~bash
+sudo /opt/aidee/source/platform/setup/onboarding-gate.py \
+  --status-file /var/lib/aidee/fleet/controller/CONTROLLER_ONBOARDING_STATUS.json \
+  --role controller --mode inspect
+~~~
+
+Inspect controller and fleet rollups with one report:
+
+~~~bash
+sudo /opt/aidee/source/platform/setup/onboarding-report.py
+~~~
+
+The update report must include:
 
 - The activated host release and controller knowledge release.
 - The controller Hermes version and central cron jobs.
