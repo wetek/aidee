@@ -7,12 +7,13 @@ upstream_dir="${HERMES_HOME}/aidee-upstream"
 release=""
 mode=""
 approved=false
+skip_fleet_sync=false
 
 usage() {
   cat <<'EOF'
 Usage:
   sync-controller.sh --release VERSION --preview
-  sync-controller.sh --release VERSION --apply --approved
+  sync-controller.sh --release VERSION --apply --approved [--skip-fleet-sync]
 
 Preview fetches a tagged Aidee release and prints its release notes.
 Apply refreshes versioned Aidee skills and records host update status.
@@ -41,6 +42,10 @@ while (( $# > 0 )); do
       ;;
     --approved)
       approved=true
+      shift
+      ;;
+    --skip-fleet-sync)
+      skip_fleet_sync=true
       shift
       ;;
     --help|-h)
@@ -138,7 +143,21 @@ plugin_destination="${HERMES_HOME}/plugins/aidee-fleet"
 if [[ -f "${plugin_source}/dashboard/manifest.json" ]]; then
   install -d -m 0750 "${HERMES_HOME}/plugins"
   if [[ -e "${plugin_destination}" && ! -L "${plugin_destination}" ]]; then
-    fail "Refusing to replace non-symlink plugin: ${plugin_destination}"
+    legacy_plugin="${plugin_destination}.pre-versioned-sync"
+    if [[ -e "${legacy_plugin}" ]]; then
+      if ! diff -qr \
+        --exclude="__pycache__" \
+        --exclude="*.pyc" \
+        "${plugin_source}" \
+        "${plugin_destination}" \
+        >/dev/null
+      then
+        fail "Plugin backup exists and current plugin has unexpected changes"
+      fi
+      rm -rf "${plugin_destination}"
+    else
+      mv "${plugin_destination}" "${legacy_plugin}"
+    fi
   fi
   ln -sfn "${plugin_source}" "${plugin_destination}"
 fi
@@ -148,7 +167,7 @@ printf '%s\n' "${release}" > "${upstream_dir}/SYNCED_RELEASE"
 chmod 0640 "${upstream_dir}/SYNCED_RELEASE"
 
 fleet_sync_tool="${target}/platform/controller-tools/sync-fleet-assistants.py"
-if [[ -f "${fleet_sync_tool}" ]]; then
+if [[ "${skip_fleet_sync}" != true && -f "${fleet_sync_tool}" ]]; then
   python3 "${fleet_sync_tool}" --approved
 fi
 

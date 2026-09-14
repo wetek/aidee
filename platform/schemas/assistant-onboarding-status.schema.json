@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aidee:schema:assistant-onboarding-status:1",
+  "title": "Aidee Assistant Onboarding Status",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "steps"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "steps": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["identity", "dashboard", "model", "telegram", "repository"],
+      "properties": {
+        "identity": {"$ref": "#/$defs/step"},
+        "dashboard": {"$ref": "#/$defs/step"},
+        "model": {"$ref": "#/$defs/step"},
+        "telegram": {"$ref": "#/$defs/step"},
+        "repository": {"$ref": "#/$defs/step"}
+      }
+    }
+  },
+  "$defs": {
+    "step": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["status"],
+      "properties": {
+        "status": {
+          "enum": ["pending", "in_progress", "complete", "deferred", "not_applicable"]
+        },
+        "confirmed_at": {"type": "string"},
+        "note": {"type": "string"}
+      }
+    }
+  }
+}

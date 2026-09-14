@@ -1,7 +1,7 @@
 # Aidee project status
 
 Status: first VPS pilot in progress
-Release: `v0.1.0-alpha.12`
+Release: `v0.1.0-alpha.13`
 
 ## Goal
 

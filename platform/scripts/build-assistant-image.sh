@@ -19,6 +19,7 @@ fi
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repository_root="$(cd -- "${script_dir}/../.." && pwd)"
 version="$(<"${repository_root}/LATEST")"
+hermes_version="$(<"${repository_root}/platform/HERMES_VERSION")"
 source_commit="$(git -C "${repository_root}" rev-parse HEAD)"
 tag="aidee-assistant:${version#v}-${source_commit:0:12}"
 record_dir="/etc/aidee/images"
@@ -43,8 +44,24 @@ if [[ -n "${existing_id}" && "${rebuild}" != true ]]; then
     docker image inspect "${tag}" \
       --format '{{index .Config.Labels "org.opencontainers.image.version"}}'
   )"
+  actual_revision="$(
+    docker image inspect "${tag}" \
+      --format '{{index .Config.Labels "org.opencontainers.image.revision"}}'
+  )"
+  actual_hermes="$(
+    docker image inspect "${tag}" \
+      --format '{{index .Config.Labels "io.aidee.hermes.version"}}'
+  )"
   if [[ "${actual_label}" != "${expected_label}" ]]; then
     echo "error: existing image has an unexpected Aidee version label" >&2
+    exit 1
+  fi
+  if [[ "${actual_revision}" != "${source_commit}" ]]; then
+    echo "error: existing image has an unexpected source revision label" >&2
+    exit 1
+  fi
+  if [[ "${actual_hermes}" != "${hermes_version}" ]]; then
+    echo "error: existing image has an unexpected Hermes version label" >&2
     exit 1
   fi
 else
@@ -52,6 +69,7 @@ else
     --file "${repository_root}/platform/container/Dockerfile" \
     --build-arg "AIDEE_VERSION=${version}" \
     --build-arg "AIDEE_SOURCE_COMMIT=${source_commit}" \
+    --build-arg "HERMES_VERSION=${hermes_version}" \
     --tag "${tag}" \
     "${repository_root}"
 fi

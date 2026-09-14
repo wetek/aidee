@@ -2,6 +2,20 @@
 
 The fleet must be reproducible on a clean supported host. VPS providers are deployment targets, not sources of truth.
 
+## In-place release updates
+
+Use desired-state reconciliation for files, services, cron jobs, image records,
+runtime directories, generated instructions, and containers that can be
+repaired repeatedly. Use a numbered migration only for a one-time state or
+schema transformation.
+
+The updater records completed migrations under `/var/lib/aidee/migrations`.
+Each transformation writes its protected backup under
+`/var/lib/aidee/backups/migrations/<migration-id>` before changing private
+configuration. A legacy install may move directly to the latest release. It
+does not need to replay historical releases when the current reconciler can
+converge its state safely.
+
 ## Inputs
 
 - The pinned public Aidee release.

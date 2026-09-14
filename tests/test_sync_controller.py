@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -24,10 +25,20 @@ class ControllerSyncTests(unittest.TestCase):
             / "example"
             / "SKILL.md"
         )
+        plugin_manifest = (
+            repository
+            / "platform"
+            / "dashboard-plugins"
+            / "aidee-fleet"
+            / "dashboard"
+            / "manifest.json"
+        )
         release_notes.parent.mkdir(parents=True)
         skill.parent.mkdir(parents=True)
+        plugin_manifest.parent.mkdir(parents=True)
         release_notes.write_text("# Test release\n")
         skill.write_text("---\nname: example\ndescription: Test skill\n---\n")
+        plugin_manifest.write_text("{}\n")
 
         commands = [
             ["git", "init", "-b", "main", str(repository)],
@@ -86,6 +97,9 @@ class ControllerSyncTests(unittest.TestCase):
             )
             self.assertNotEqual(unapproved.returncode, 0)
 
+            legacy_plugin = hermes_home / "plugins/aidee-fleet"
+            legacy_plugin.mkdir(parents=True)
+            (legacy_plugin / "legacy-marker").write_text("preserved\n")
             applied = self.run_sync(
                 repository,
                 hermes_home,
@@ -102,6 +116,34 @@ class ControllerSyncTests(unittest.TestCase):
             self.assertTrue(
                 (hermes_home / "skills" / "example").is_symlink()
             )
+            self.assertTrue(
+                (hermes_home / "plugins/aidee-fleet").is_symlink()
+            )
+            self.assertEqual(
+                (
+                    hermes_home
+                    / "plugins/aidee-fleet.pre-versioned-sync/legacy-marker"
+                ).read_text(),
+                "preserved\n",
+            )
+
+            versioned_plugin = hermes_home / "plugins/aidee-fleet"
+            versioned_plugin.unlink()
+            shutil.copytree(
+                repository / "platform/dashboard-plugins/aidee-fleet",
+                versioned_plugin,
+            )
+            cache = versioned_plugin / "dashboard/__pycache__"
+            cache.mkdir()
+            (cache / "plugin_api.cpython-test.pyc").write_bytes(b"generated")
+            retried = self.run_sync(
+                repository,
+                hermes_home,
+                "--apply",
+                "--approved",
+            )
+            self.assertEqual(retried.returncode, 0, retried.stderr)
+            self.assertTrue(versioned_plugin.is_symlink())
 
     def test_apply_runs_fleet_assistants_sync(self):
         with tempfile.TemporaryDirectory() as temporary_directory:

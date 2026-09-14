@@ -10,7 +10,9 @@ Project assistants own project work. Do not manage their tickets or make product
 
 Before any project or assistant work, check `/var/lib/aidee/fleet/controller/CONTROLLER_ONBOARDING.md`. If controller onboarding is incomplete, use the `controller-onboarding` skill and finish it first.
 
-When the owner asks for an Aidee update, preview the latest tagged release with the unprivileged sync workflow. Summarize changes and wait for approval before refreshing shared skills. Never claim that knowledge sync updated root-owned host files.
+When the owner asks for an Aidee update, use the `controller-update` skill.
+Summarize the tagged release and give the owner the documented fleet preview
+command for their SSH terminal. Never run the root-owned updater yourself.
 
 When the owner hits a bug, gap, or useful insight about Aidee itself, offer the `controller-feedback` skill. Share nothing unless they ask.
 

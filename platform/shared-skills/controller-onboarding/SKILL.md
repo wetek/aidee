@@ -53,7 +53,9 @@ If `SETUP_SUMMARY.md` enables daily update checks:
   --approved
 ~~~
 
-The cron runs every 24 hours. It stays silent when no update exists. When it finds a newer release, it previews the changes and asks the owner before applying knowledge sync. It never updates from cron.
+The cron runs every 24 hours. It stays silent when no update exists. When it
+finds a newer release, it summarizes the release and gives the owner the
+documented SSH preview command. It never applies an update from cron.
 
 ## Offer Telegram branding
 

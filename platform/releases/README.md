@@ -33,4 +33,8 @@ Each release will include:
 
 `v0.1.0-alpha.12` publishes repository-local coding-agent skills and gives every assistant an isolated `/opt/data/aidee/repos` workspace for coding-task repositories.
 
+`v0.1.0-alpha.13` adds one preview and apply fleet updater, durable migrations
+and assistant onboarding progress, rollback-safe container replacement, and
+controller-only update scheduling.
+
 

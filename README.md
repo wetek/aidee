@@ -38,15 +38,18 @@ A terminal-enabled coding agent can inspect the cloned repository and read [docs
 Copy this prompt into the installed Aidee controller:
 
 ~~~text
-Check for the latest Aidee release and update your Aidee knowledge.
+Check for the latest Aidee release and guide me through the fleet update.
 
 Read and follow:
 https://raw.githubusercontent.com/wetek/aidee/main/docs/update-controller.md
 
-Start with the read-only preview. Summarize what changed and ask for my approval before applying the knowledge sync. Do not use sudo or claim that root-owned host files were updated.
+Give me the documented SSH preview command. Summarize what it will change and
+wait for my approval before giving me the apply command. Do not run the
+root-owned updater from this chat or from a cron.
 ~~~
 
-The sync refreshes controller documentation and shared skills. A separate owner-approved process updates root-owned host scripts and services.
+Alpha 13 and later update the host, controller, and registered assistants
+through one owner-approved command.
 
 ## Current scope
 

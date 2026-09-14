@@ -15,6 +15,14 @@ from pathlib import Path
 import jsonschema
 import yaml
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from assistant_state import (
+    CONTAINER_UID,
+    build_soul_document,
+    default_assistant_config,
+    default_onboarding_status,
+)
+
 
 SOURCE_ROOT = Path(os.environ.get("AIDEE_SOURCE_ROOT", "/opt/aidee/source"))
 STATE_ROOT = Path(os.environ.get("AIDEE_STATE_ROOT", "/var/lib/aidee"))
@@ -24,10 +32,8 @@ IMAGE_RECORD_ROOT = Path(
 OWNER_RECORD = Path(os.environ.get("AIDEE_OWNER_RECORD", "/etc/aidee/owner.json"))
 SOCKET_PATH = Path(os.environ.get("AIDEE_ADMIN_SOCKET", "/run/aidee/admin.sock"))
 CONTROLLER_USER = os.environ.get("AIDEE_CONTROLLER_USER", "aidee-controller")
-CONTAINER_UID = 10000
 MAX_REQUEST_BYTES = 65536
 ASSISTANT_ID = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
-CONTAINER_REPOS_ROOT = "/opt/data/aidee/repos"
 DASHBOARD_USERNAME = "aidee"
 DASHBOARD_USERNAME_KEY = "HERMES_DASHBOARD_BASIC_AUTH_USERNAME"
 DASHBOARD_PASSWORD_KEY = "HERMES_DASHBOARD_BASIC_AUTH_PASSWORD"
@@ -80,17 +86,33 @@ def safe_assistant_id(assistant_id):
 
 
 def ensure_directory(path, uid, gid, mode):
+    if path.is_symlink():
+        raise AdminError(f"managed directory must not be a symlink: {path}")
+    if path.exists() and not path.is_dir():
+        raise AdminError(f"managed directory path is not a directory: {path}")
     path.mkdir(parents=True, exist_ok=True)
     os.chmod(path, mode)
     os.chown(path, uid, gid)
 
 
 def write_text(path, text, uid, gid, mode=0o660):
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(text)
-    os.chmod(temporary, mode)
-    os.chown(temporary, uid, gid)
-    temporary.replace(path)
+    if path.is_symlink():
+        raise AdminError(f"managed file must not be a symlink: {path}")
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{path.name}.", dir=path.parent
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w") as stream:
+            stream.write(text)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.chmod(temporary, mode)
+        os.chown(temporary, uid, gid)
+        temporary.replace(path)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
 
 
 def env_value(text, key):
@@ -250,42 +272,6 @@ def owner_name():
     return name
 
 
-def build_soul_document(assistant, owner):
-    sections = [
-        f"# {assistant['name']}",
-        "",
-        f"You are {assistant['name']}, a Hermes assistant owned by {owner}.",
-        "",
-        f"Purpose: {assistant['purpose']}",
-        "",
-        "You run in an isolated Aidee container. Use only your approved files, tools,",
-        "repositories, and services. Never expose credentials or another assistant's",
-        "data.",
-        f"Store every coding-task repository under {CONTAINER_REPOS_ROOT}.",
-        "",
-        "## Communication Standards (Unslop)",
-        "- Concise response budget: default to 120 words or fewer. Expand only when safety, a decision, or an error requires it.",
-        "- Plain direct speech: communicate plainly without preamble, conversational filler, sycophancy, or generic cheerleading.",
-        "- Real deliverables: produce working artifacts backed by actual tool execution; never substitute summaries or promises for real execution.",
-        "- Interactive Telegram Choices: When communicating over Telegram and presenting choices, decisions, next steps, or confirmation requests, always use the interactive clarify tool with clickable options so the user can select an option directly rather than typing.",
-        "- Command Approvals on Telegram: The platform UI already displays the command and action buttons. Provide only a concise 1-2 line explanation of the purpose and effects without repeating the command text or boilerplate headers.",
-    ]
-    if assistant.get("kind") in {"coding", "project"}:
-        sections.extend(
-            [
-                "",
-                "## Software Engineering Standards",
-                "- Test-driven verification: enforce TDD and execute real tests (tsc, pytest, vitest) before completing tasks. Never finish without test evidence.",
-                "- Systematic debugging (`diagnosing-bugs`): follow 6-phase root-cause analysis (Reproduce -> Minimise -> Hypothesise -> Instrument -> Fix -> Regression-test) before modifying code.",
-                "- Requirements interrogation (`grill-me`, `grill-with-docs`, `grilling`, `to-spec`): interrogate requirements and edge cases before coding (`grill-me`, `grilling`), pair with documentation (`grill-with-docs`), and synthesize specifications into actionable specs with acceptance criteria (`to-spec`).",
-                "- Architecture & domain design (`codebase-design`, `domain-modeling`): build deep modules with small interfaces (`codebase-design`), maintain domain glossaries in CONTEXT.md and record ADRs (`domain-modeling`).",
-                "- Pre-commit code review (`code-review`): perform two-axis review (Standards + Spec fidelity), enforce quality gates, and keep diffs atomic.",
-                "- Clean documentation & handoff (`handoff`): preserve state and snapshots across turns, write structured commit messages, clear PR descriptions linking issues, and cited action items.",
-            ]
-        )
-    return "\n".join(sections) + "\n"
-
-
 def sync_shared_skills(source_root, runtime_dir, uid, gid):
     shared_skills_dir = source_root / "platform" / "shared-skills"
     if not shared_skills_dir.is_dir():
@@ -373,17 +359,7 @@ def create_assistant_state(assistant, image_id, dashboard_url):
         controller_gid,
     )
 
-    config = {
-        "schema_version": 1,
-        "assistant": {
-            "id": assistant_id,
-            "name": assistant["name"],
-            "kind": assistant["kind"],
-            "purpose": assistant["purpose"],
-        },
-        "projects": [],
-        "approvals": {"mode": "hermes_default"},
-    }
+    config = default_assistant_config(assistant)
     write_text(
         fleet_dir / "assistant.yaml",
         yaml.safe_dump(config, sort_keys=False),
@@ -406,6 +382,12 @@ def create_assistant_state(assistant, image_id, dashboard_url):
     write_text(
         runtime_dir / "config.yaml",
         yaml.safe_dump(runtime_config, sort_keys=False),
+        CONTAINER_UID,
+        controller_gid,
+    )
+    write_text(
+        runtime_dir / "aidee/onboarding-status.json",
+        json.dumps(default_onboarding_status(), indent=2) + "\n",
         CONTAINER_UID,
         controller_gid,
     )
@@ -523,6 +505,10 @@ def update_registry(assistant, image_id, dashboard_url):
             "image": {
                 "aidee_version": assistant["image_version"],
                 "image_id": image_id,
+            },
+            "onboarding": {
+                "status": "pending",
+                "status_path": "aidee/onboarding-status.json",
             },
         }
     )

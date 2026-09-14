@@ -22,10 +22,10 @@ class AdminHelperTests(unittest.TestCase):
         image_id = "sha256:" + "a" * 64
         image_dir = state_root / "runtime" / "images"
         image_dir.mkdir(parents=True)
-        (image_dir / "v0.1.0-alpha.12.json").write_text(
+        (image_dir / "v0.1.0-alpha.13.json").write_text(
             json.dumps(
                 {
-                    "aidee_version": "v0.1.0-alpha.12",
+                    "aidee_version": "v0.1.0-alpha.13",
                     "image_id": image_id,
                     "source_commit": "testcommit",
                     "validation": "validated",
@@ -72,7 +72,7 @@ class AdminHelperTests(unittest.TestCase):
                 if command[:3] == ["docker", "image", "inspect"]:
                     if "org.opencontainers.image.revision" in command[-1]:
                         return "testcommit"
-                    return "v0.1.0-alpha.12"
+                    return "v0.1.0-alpha.13"
                 if command[:3] == ["git", "-C", str(ROOT)]:
                     return "testcommit"
                 if command[:2] == ["docker", "ps"]:
@@ -155,6 +155,23 @@ class AdminHelperTests(unittest.TestCase):
             self.assertNotIn("--network host", flattened)
             self.assertIn("--read-only", flattened)
             self.assertIn("no-new-privileges:true", flattened)
+            proxy_create = next(
+                command
+                for command in docker_create
+                if f"container:aidee-{request['assistant']['id']}" in command
+            )
+            entrypoint_index = proxy_create.index("--entrypoint")
+            self.assertEqual(
+                proxy_create[entrypoint_index : entrypoint_index + 3],
+                ["--entrypoint", "socat", image_id],
+            )
+            self.assertEqual(
+                proxy_create[entrypoint_index + 3 :],
+                [
+                    "TCP-LISTEN:9121,fork,reuseaddr",
+                    "TCP:127.0.0.1:9119",
+                ],
+            )
 
             registry = yaml.safe_load(
                 (state_root / "fleet" / "registry.yaml").read_text()
@@ -230,15 +247,15 @@ class AdminHelperTests(unittest.TestCase):
             soul_text = runtime_soul.read_text()
             self.assertEqual(soul_text, fleet_soul.read_text())
             self.assertIn("# Personal", soul_text)
-            self.assertIn("Communication Standards (Unslop)", soul_text)
+            self.assertIn("Communication standards", soul_text)
             self.assertIn("120 words or fewer", soul_text)
-            self.assertIn("Interactive Telegram Choices", soul_text)
+            self.assertIn("On Telegram, present choices", soul_text)
             self.assertIn("interactive clarify tool with clickable options", soul_text)
             self.assertIn(
                 "Store every coding-task repository under /opt/data/aidee/repos.",
                 soul_text,
             )
-            self.assertNotIn("Software Engineering Standards", soul_text)
+            self.assertNotIn("Software engineering standards", soul_text)
             self.assertNotIn("memories:/opt/data/memories", flattened)
             skin_path = (
                 state_root
@@ -286,7 +303,7 @@ class AdminHelperTests(unittest.TestCase):
                 if command[:3] == ["docker", "image", "inspect"]:
                     if "org.opencontainers.image.revision" in command[-1]:
                         return "testcommit"
-                    return "v0.1.0-alpha.12"
+                    return "v0.1.0-alpha.13"
                 if command[:3] == ["git", "-C", str(ROOT)]:
                     return "testcommit"
                 if command[:2] == ["docker", "ps"]:
@@ -386,7 +403,7 @@ class AdminHelperTests(unittest.TestCase):
                 if command[:3] == ["docker", "image", "inspect"]:
                     if "org.opencontainers.image.revision" in command[-1]:
                         return "testcommit"
-                    return "v0.1.0-alpha.12"
+                    return "v0.1.0-alpha.13"
                 if command[:3] == ["git", "-C", str(ROOT)]:
                     return "testcommit"
                 if command[:2] == ["docker", "ps"]:
@@ -475,7 +492,7 @@ class AdminHelperTests(unittest.TestCase):
                 if command[:3] == ["docker", "image", "inspect"]:
                     if "org.opencontainers.image.revision" in command[-1]:
                         return "testcommit"
-                    return "v0.1.0-alpha.12"
+                    return "v0.1.0-alpha.13"
                 if command[:3] == ["git", "-C", str(ROOT)]:
                     return "testcommit"
                 if command[:2] == ["docker", "ps"]:
@@ -573,7 +590,7 @@ class AdminHelperTests(unittest.TestCase):
                 if command[:3] == ["docker", "image", "inspect"]:
                     if "org.opencontainers.image.revision" in command[-1]:
                         return "testcommit"
-                    return "v0.1.0-alpha.12"
+                    return "v0.1.0-alpha.13"
                 if command[:3] == ["git", "-C", str(ROOT)]:
                     return "testcommit"
                 if command[:2] == ["docker", "ps"]:
@@ -917,7 +934,7 @@ class AdminHelperTests(unittest.TestCase):
                     if command[:3] == ["docker", "image", "inspect"]:
                         if "org.opencontainers.image.revision" in command[-1]:
                             return "testcommit"
-                        return "v0.1.0-alpha.12"
+                        return "v0.1.0-alpha.13"
                     if command[:3] == ["git", "-C", str(ROOT)]:
                         return "testcommit"
                     if command[:2] == ["docker", "ps"]:
@@ -972,23 +989,23 @@ class AdminHelperTests(unittest.TestCase):
                 )
                 self.assertTrue(runtime_soul.is_file())
                 content = runtime_soul.read_text()
-                self.assertIn("Communication Standards (Unslop)", content)
+                self.assertIn("Communication standards", content)
                 self.assertIn("120 words or fewer", content)
-                self.assertIn("Interactive Telegram Choices", content)
+                self.assertIn("On Telegram, present choices", content)
                 self.assertIn("interactive clarify tool with clickable options", content)
-                self.assertIn("Software Engineering Standards", content)
-                self.assertIn("Test-driven verification", content)
-                self.assertIn("Systematic debugging (`diagnosing-bugs`)", content)
+                self.assertIn("Software engineering standards", content)
+                self.assertIn("Run relevant tests", content)
+                self.assertIn("`diagnosing-bugs`", content)
                 self.assertIn(
-                    "Requirements interrogation (`grill-me`, `grill-with-docs`, `grilling`, `to-spec`)",
+                    "requirements and specification skills",
                     content,
                 )
                 self.assertIn(
-                    "Architecture & domain design (`codebase-design`, `domain-modeling`)",
+                    "`codebase-design` and `domain-modeling`",
                     content,
                 )
-                self.assertIn("Pre-commit code review (`code-review`)", content)
-                self.assertIn("Clean documentation & handoff (`handoff`)", content)
+                self.assertIn("`code-review` before handoff", content)
+                self.assertIn("`handoff` to preserve", content)
 
                 skills_dir = (
                     state_root

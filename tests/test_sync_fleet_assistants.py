@@ -190,13 +190,13 @@ class SyncFleetAssistantsTests(unittest.TestCase):
         self.assertIn("# Personal Assistant", p_fleet_soul)
         self.assertIn("Test Owner", p_fleet_soul)
         self.assertIn("Purpose: Help with personal daily workflows.", p_fleet_soul)
-        self.assertIn("Communication Standards (Unslop)", p_fleet_soul)
+        self.assertIn("Communication standards", p_fleet_soul)
         self.assertIn("120 words or fewer", p_fleet_soul)
-        self.assertIn("Interactive Telegram Choices", p_fleet_soul)
+        self.assertIn("On Telegram, present choices", p_fleet_soul)
         self.assertIn(
             "interactive clarify tool with clickable options", p_fleet_soul
         )
-        self.assertNotIn("Software Engineering Standards", p_fleet_soul)
+        self.assertNotIn("Software engineering standards", p_fleet_soul)
 
         # Verify Coding SOUL.md
         c_fleet_soul = (coding_fleet / "SOUL.md").read_text()
@@ -207,21 +207,21 @@ class SyncFleetAssistantsTests(unittest.TestCase):
         self.assertIn(
             "Purpose: Execute software development tasks.", c_fleet_soul
         )
-        self.assertIn("Communication Standards (Unslop)", c_fleet_soul)
-        self.assertIn("Interactive Telegram Choices", c_fleet_soul)
-        self.assertIn("Software Engineering Standards", c_fleet_soul)
-        self.assertIn("Test-driven verification", c_fleet_soul)
-        self.assertIn("Systematic debugging (`diagnosing-bugs`)", c_fleet_soul)
+        self.assertIn("Communication standards", c_fleet_soul)
+        self.assertIn("On Telegram, present choices", c_fleet_soul)
+        self.assertIn("Software engineering standards", c_fleet_soul)
+        self.assertIn("Run relevant tests", c_fleet_soul)
+        self.assertIn("`diagnosing-bugs`", c_fleet_soul)
         self.assertIn(
-            "Requirements interrogation (`grill-me`, `grill-with-docs`, `grilling`, `to-spec`)",
+            "requirements and specification skills",
             c_fleet_soul,
         )
         self.assertIn(
-            "Architecture & domain design (`codebase-design`, `domain-modeling`)",
+            "`codebase-design` and `domain-modeling`",
             c_fleet_soul,
         )
-        self.assertIn("Pre-commit code review (`code-review`)", c_fleet_soul)
-        self.assertIn("Clean documentation & handoff (`handoff`)", c_fleet_soul)
+        self.assertIn("`code-review` before handoff", c_fleet_soul)
+        self.assertIn("`handoff` to preserve", c_fleet_soul)
 
         # Verify shared skills copied to runtime
         for r_dir in (personal_runtime, coding_runtime):

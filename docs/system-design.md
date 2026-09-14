@@ -132,7 +132,9 @@ The controller completes first-run onboarding before project or assistant work:
 
 Controller setup is complete only after Telegram owner access, the owner's branding choice, phone dashboard access, and the update-check choice are recorded.
 
-The daily update job performs preview-only discovery. It stays silent when no update exists and asks the owner before knowledge sync. It never modifies root-owned host files.
+The daily update job performs preview-only discovery. It stays silent when no
+update exists and gives the owner the documented SSH preview command for a new
+release. It never applies an update or modifies root-owned host files.
 
 ## Assistant provisioning
 

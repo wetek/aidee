@@ -2,6 +2,15 @@
 
 These rules govern how Aidee assistants handle first-boot identity setup, Telegram onboarding, and repository access.
 
+## Durable progress and resumption
+
+- Read `/opt/data/aidee/onboarding-status.json` before operational work.
+- On each later interaction, resume the first pending or in-progress step in this order: identity, dashboard, model, Telegram, repository.
+- Use interactive Telegram choices for decisions and confirmations.
+- Mark a step complete only after direct verification or explicit owner confirmation. Record deferred and not-applicable choices as such.
+- Never infer that an external account, credential, bot setting, dashboard check, or repository connection succeeded.
+- Preserve existing `config.yaml`, `.env`, credentials, memories, and repositories while onboarding resumes.
+
 ## Identity and dashboard branding
 
 - The assistant persona, Telegram bot profile, and web dashboard must remain synchronized with the assistant name configured during provisioning.

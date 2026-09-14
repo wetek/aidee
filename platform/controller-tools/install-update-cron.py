@@ -19,10 +19,10 @@ host release at /opt/aidee/source.
 If no newer release exists and no host update is pending, respond with
 [SILENT].
 
-If a newer release exists, use the controller-update skill to fetch and
-preview it. Summarize the release notes, migrations, security changes, and
-host update requirements. Ask the owner whether to sync. Do not apply the
-update, use sudo, or modify root-owned files during this cron run."""
+If a newer release exists, use the controller-update skill to summarize its
+release notes, migrations, security changes, and fleet update requirements.
+Give the owner the documented SSH preview command. Do not apply the update,
+use sudo, or modify root-owned files during this cron run."""
 
 
 def update_status(status_path):

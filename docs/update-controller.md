@@ -1,105 +1,74 @@
 # Update an existing Aidee controller
 
-These instructions are for an installed Aidee controller. Run them as the unprivileged controller account. Never use sudo.
+These instructions are for an existing Aidee VPS. Alpha 13 adds one owner-facing
+preview and apply command for the host, controller, and every registered
+assistant. Run it from the owner's SSH terminal with sudo.
 
 ## Rules
 
-1. Read the latest release marker.
-2. Detect the installed host release and current knowledge release.
-3. Fetch the tagged release into the controller's private cache.
-4. Run preview mode.
-5. Summarize changes and compatibility concerns.
-6. Ask the owner for approval.
-7. Run apply mode only after approval.
-8. Report whether root-owned host files still need an update.
-
-Knowledge sync and host update are separate:
-
-- Knowledge sync refreshes Aidee documentation and shared skills available to the controller.
-- Host update changes root-owned scripts and services. The controller cannot perform it.
-
-Do not claim that the host is updated after knowledge sync.
-
-The controller may run this workflow from the owner-provided prompt or its daily update cron. A cron run may preview changes and ask for approval, but it must never apply the update itself.
+1. Read `https://raw.githubusercontent.com/wetek/aidee/main/LATEST`.
+2. Require a version matching `v<major>.<minor>.<patch>-alpha.<number>`.
+3. Run the root-owned preview from the owner's SSH terminal.
+4. Review the release notes and listed actions.
+5. Run apply only after explicit owner approval.
+6. Verify the host, controller, crons, image, containers, and assistant state.
+7. Never apply from a scheduled run or Hermes interaction.
 
 ## Find the latest release
 
-Read:
-
 `https://raw.githubusercontent.com/wetek/aidee/main/LATEST`
-
-The response must be one version matching `v<major>.<minor>.<patch>-alpha.<number>`.
-
-## Fetch and preview
-
-Replace `RELEASE` with the exact value from `LATEST`:
-
-~~~bash
-release="RELEASE"
-hermes_home="${HERMES_HOME:-$HOME/.hermes}"
-source_dir="$hermes_home/aidee-sync-source/$release"
-mkdir -p "$hermes_home/aidee-sync-source"
-git clone \
-  --branch "$release" \
-  --depth 1 \
-  https://github.com/wetek/aidee.git \
-  "$source_dir"
-"$source_dir/platform/scripts/sync-controller.sh" \
-  --release "$release" \
-  --preview
-~~~
-
-If the source directory already exists, verify its exact tag instead of deleting or replacing it.
-
-Summarize:
-
-- Installed host release.
-- Current knowledge release.
-- Available release.
-- Setup or state migrations.
-- Security changes.
-- New or changed controller skills.
-- Work that still requires root access.
-
-Ask the owner to approve knowledge sync.
-
-## Apply after approval
-
-Run:
-
-~~~bash
-"$source_dir/platform/scripts/sync-controller.sh" \
-  --release "$release" \
-  --apply \
-  --approved
-~~~
-
-Start a new Hermes session after syncing so skill discovery reloads.
-
-If `~/.hermes/aidee-upstream/HOST_UPDATE_REQUIRED.md` exists, explain that the host remains on an older release. Do not invent an update command or request sudo access. Use the release's documented host update process when available.
 
 ## Host update
 
-After a successful knowledge preview, the owner may separately approve a host update. The controller must not run it.
+### One-time bootstrap from Alpha 12 or older
 
-Give the owner this command for their SSH terminal:
+Older releases do not contain the fleet updater. Fetch the exact Alpha 13 tag
+and preview it:
 
 ~~~bash
-sudo "SOURCE_DIR/platform/scripts/update-host.sh" \
-  --release "RELEASE" \
-  --owner-name "OWNER_NAME" \
-  --approved
+sudo install -d -m 0755 /opt/aidee/releases
+sudo git clone --branch v0.1.0-alpha.13 --depth 1 \
+  https://github.com/wetek/aidee.git \
+  /opt/aidee/releases/v0.1.0-alpha.13
+sudo /opt/aidee/releases/v0.1.0-alpha.13/platform/scripts/update-host.sh \
+  --release v0.1.0-alpha.13 --preview
 ~~~
 
-Replace `SOURCE_DIR`, `RELEASE`, and `OWNER_NAME` with the previewed values. The updater archives the previous source, activates the tagged release, installs the administration helper, copies the Fleet dashboard plugin, restarts the controller dashboard when Hermes is present, and builds and validates the shared assistant image.
+After reviewing the preview and explicitly approving it, run:
+
+~~~bash
+sudo /opt/aidee/releases/v0.1.0-alpha.13/platform/scripts/update-host.sh \
+  --release v0.1.0-alpha.13 --apply --approved
+~~~
+
+### Future updates
+
+Use the permanently installed command with the exact tag from `LATEST`:
+
+~~~bash
+sudo /opt/aidee/source/platform/scripts/update-host.sh \
+  --release RELEASE --preview
+~~~
+
+After reviewing and approving the preview:
+
+~~~bash
+sudo /opt/aidee/source/platform/scripts/update-host.sh \
+  --release RELEASE --apply --approved
+~~~
+
+Preview may fetch the release tag, but it does not change active state. Apply
+refreshes root-owned services, controller knowledge and Hermes, controller-only
+default crons, the validated assistant image, and all registered assistants.
+It preserves bind-mounted runtime data and rolls back failed container
+replacement.
 
 ## Report
 
 Report:
 
-- The release fetched.
-- The release activated for controller knowledge.
-- Skills refreshed.
-- Whether the host release differs.
-- Any blocked migration.
-- The next owner action.
+- The activated host release and controller knowledge release.
+- The controller Hermes version and central cron jobs.
+- The validated image ID and each assistant container image.
+- Repaired directories, instructions, configuration, skills, and onboarding status.
+- Any rollback, failed check, or incomplete external onboarding step.

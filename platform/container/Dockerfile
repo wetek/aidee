@@ -24,12 +24,13 @@ COPY platform/defaults/assistant.yaml /opt/aidee/defaults/assistant.yaml
 
 ARG AIDEE_VERSION
 ARG AIDEE_SOURCE_COMMIT
+ARG HERMES_VERSION
 
 LABEL org.opencontainers.image.title="Aidee Assistant"
 LABEL org.opencontainers.image.source="https://github.com/wetek/aidee"
 LABEL org.opencontainers.image.version="${AIDEE_VERSION}"
 LABEL org.opencontainers.image.revision="${AIDEE_SOURCE_COMMIT}"
-LABEL io.aidee.hermes.version="v2026.9.11"
+LABEL io.aidee.hermes.version="${HERMES_VERSION}"
 LABEL io.aidee.opencode.version="${OPENCODE_VERSION}"
 
 ENV AIDEE_SHARED_ROOT=/opt/aidee

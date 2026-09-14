@@ -2,6 +2,7 @@
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -19,10 +20,10 @@ host release at /opt/aidee/source.
 If no newer release exists and no host update is pending, respond with
 [SILENT].
 
-If a newer release exists, use the controller-update skill to fetch and
-preview it. Summarize the release notes, migrations, security changes, and
-host update requirements. Ask the owner whether to sync. Do not apply the
-update, use sudo, or modify root-owned files during this cron run."""
+If a newer release exists, use the controller-update skill to summarize its
+release notes, migrations, security changes, and fleet update requirements.
+Give the owner the documented SSH preview command. Do not apply the update,
+use sudo, or modify root-owned files during this cron run."""
 
 WATCHDOG_JOB_NAME = "Aidee fleet health watchdog"
 WATCHDOG_SCHEDULE = "every 6h"
@@ -53,6 +54,67 @@ def run(command):
     return subprocess.run(command, capture_output=True, text=True)
 
 
+def job_id(list_output, name):
+    current_id = None
+    for line in list_output.splitlines():
+        clean = re.sub(r"\x1b\[[0-9;]*m", "", line)
+        identifier = re.match(
+            r"\s*([0-9a-f]{8,}(?:-[0-9a-f-]+)?)\s+\[", clean, re.I
+        )
+        if identifier:
+            current_id = identifier.group(1)
+        listed_name = re.match(r"\s*Name:\s*(.+?)\s*$", clean)
+        if listed_name and listed_name.group(1) == name:
+            return current_id
+        if name in clean:
+            inline_id = re.search(
+                r"\b[0-9a-f]{8,}(?:-[0-9a-f-]+)?\b", clean, re.I
+            )
+            if inline_id:
+                return inline_id.group(0)
+    return None
+
+
+def reconcile_job(hermes, existing_output, name, schedule, prompt, skill=None):
+    existing_id = job_id(existing_output, name)
+    if existing_id:
+        command = [
+            hermes,
+            "cron",
+            "edit",
+            existing_id,
+            "--schedule",
+            schedule,
+            "--prompt",
+            prompt,
+            "--name",
+            name,
+            "--deliver",
+            "telegram",
+            "--continuity",
+        ]
+        if skill:
+            command.extend(["--skill", skill])
+        return run(command)
+    if name in existing_output:
+        return subprocess.CompletedProcess([], 0, "", "")
+    command = [
+        hermes,
+        "cron",
+        "create",
+        schedule,
+        prompt,
+        "--name",
+        name,
+        "--deliver",
+        "telegram",
+    ]
+    if skill:
+        command.extend(["--skill", skill])
+    command.append("--continuity")
+    return run(command)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Install default Aidee cron jobs."
@@ -79,45 +141,29 @@ def main():
         print(existing.stderr.strip(), file=sys.stderr)
         return existing.returncode
 
-    if not arguments.skip_update_check and UPDATE_JOB_NAME not in existing.stdout:
-        created_update = run(
-            [
-                hermes,
-                "cron",
-                "create",
-                UPDATE_SCHEDULE,
-                UPDATE_PROMPT,
-                "--name",
-                UPDATE_JOB_NAME,
-                "--deliver",
-                "telegram",
-                "--skill",
-                "controller-update",
-                "--continuity",
-            ]
+    if not arguments.skip_update_check:
+        created_update = reconcile_job(
+            hermes,
+            existing.stdout,
+            UPDATE_JOB_NAME,
+            UPDATE_SCHEDULE,
+            UPDATE_PROMPT,
+            "controller-update",
         )
         if created_update.returncode != 0:
             print(created_update.stderr.strip(), file=sys.stderr)
             return created_update.returncode
 
-    if WATCHDOG_JOB_NAME not in existing.stdout:
-        created_watchdog = run(
-            [
-                hermes,
-                "cron",
-                "create",
-                WATCHDOG_SCHEDULE,
-                WATCHDOG_PROMPT,
-                "--name",
-                WATCHDOG_JOB_NAME,
-                "--deliver",
-                "telegram",
-                "--continuity",
-            ]
-        )
-        if created_watchdog.returncode != 0:
-            print(created_watchdog.stderr.strip(), file=sys.stderr)
-            return created_watchdog.returncode
+    created_watchdog = reconcile_job(
+        hermes,
+        existing.stdout,
+        WATCHDOG_JOB_NAME,
+        WATCHDOG_SCHEDULE,
+        WATCHDOG_PROMPT,
+    )
+    if created_watchdog.returncode != 0:
+        print(created_watchdog.stderr.strip(), file=sys.stderr)
+        return created_watchdog.returncode
 
     if arguments.status_file:
         try:

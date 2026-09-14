@@ -94,7 +94,7 @@ Missing swap is a warning, not a setup blocker. Do not create swap automatically
 
 - Which dashboard access method do they want?
   1. Tailscale private HTTPS address (recommended and automated).
-  2. Cloudflare custom subdomain (planned, not automated in Alpha 12).
+  2. Cloudflare custom subdomain (planned, not automated in Alpha 13).
   3. Temporary SSH tunnel.
   4. Another method.
 - Do they want the verified dashboard URL as the Telegram bot menu button?
@@ -194,7 +194,7 @@ Use this shape:
     "assistants": [
       {
         "schema_version": 1,
-        "release": "v0.1.0-alpha.12",
+        "release": "v0.1.0-alpha.13",
         "owner": {
           "name": "Example Owner",
           "experience": "guided"
@@ -266,7 +266,7 @@ The owner pastes the whole block into an SSH terminal. Do not ask them to paste 
 12. Telegram bot branding offer.
 13. Telegram dashboard menu button.
 14. Phone dashboard verification.
-15. Optional daily update check that always asks before syncing.
+15. Optional controller-only daily update check that never applies updates.
 16. Non-secret Telegram handoff.
 
 The program stores progress under `/var/lib/aidee/setup`. It prints one next action when it pauses.

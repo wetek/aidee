@@ -8,41 +8,12 @@ from pathlib import Path
 
 import yaml
 
-CONTAINER_UID = 10000
-
-
-def build_soul_document(name: str, owner: str, purpose: str, kind: str) -> str:
-    sections = [
-        f"# {name}",
-        "",
-        f"You are {name}, a Hermes assistant owned by {owner}.",
-        "",
-        f"Purpose: {purpose}",
-        "",
-        "You run in an isolated Aidee container. Use only your approved files, tools,",
-        "repositories, and services. Never expose credentials or another assistant's",
-        "data.",
-        "",
-        "## Communication Standards (Unslop)",
-        "- Concise response budget: default to 120 words or fewer. Expand only when safety, a decision, or an error requires it.",
-        "- Plain direct speech: communicate plainly without preamble, conversational filler, sycophancy, or generic cheerleading.",
-        "- Real deliverables: produce working artifacts backed by actual tool execution; never substitute summaries or promises for real execution.",
-        "- Interactive Telegram Choices: When communicating over Telegram and presenting choices, decisions, next steps, or confirmation requests, always use the interactive clarify tool with clickable options so the user can select an option directly rather than typing.",
-    ]
-    if kind in {"coding", "project"}:
-        sections.extend(
-            [
-                "",
-                "## Software Engineering Standards",
-                "- Test-driven verification: enforce TDD and execute real tests (tsc, pytest, vitest) before completing tasks. Never finish without test evidence.",
-                "- Systematic debugging (`diagnosing-bugs`): follow 6-phase root-cause analysis (Reproduce -> Minimise -> Hypothesise -> Instrument -> Fix -> Regression-test) before modifying code.",
-                "- Requirements interrogation (`grill-me`, `grill-with-docs`, `grilling`, `to-spec`): interrogate requirements and edge cases before coding (`grill-me`, `grilling`), pair with documentation (`grill-with-docs`), and synthesize specifications into actionable specs with acceptance criteria (`to-spec`).",
-                "- Architecture & domain design (`codebase-design`, `domain-modeling`): build deep modules with small interfaces (`codebase-design`), maintain domain glossaries in CONTEXT.md and record ADRs (`domain-modeling`).",
-                "- Pre-commit code review (`code-review`): perform two-axis review (Standards + Spec fidelity), enforce quality gates, and keep diffs atomic.",
-                "- Clean documentation & handoff (`handoff`): preserve state and snapshots across turns, write structured commit messages, clear PR descriptions linking issues, and cited action items.",
-            ]
-        )
-    return "\n".join(sections) + "\n"
+ADMIN_DIR = Path(__file__).resolve().parents[1] / "admin"
+sys.path.insert(0, str(ADMIN_DIR))
+from assistant_state import (  # noqa: E402
+    CONTAINER_UID,
+    reconcile_assistant_files,
+)
 
 
 def resolve_owner(
@@ -222,14 +193,28 @@ def sync_fleet_assistants(
                     file=sys.stderr,
                 )
 
+        fleet_soul = fleet_dir / "SOUL.md"
+        if not purpose and fleet_soul.is_file():
+            try:
+                match = re.search(
+                    r"^Purpose:\s*(.+)$",
+                    fleet_soul.read_text(),
+                    re.MULTILINE,
+                )
+                if match:
+                    purpose = match.group(1).strip()
+            except OSError:
+                pass
+
         if not purpose:
             purpose = f"Operate as {name} assistant."
 
-        soul_content = build_soul_document(
-            name=name, owner=owner, purpose=purpose, kind=kind
-        )
-
-        fleet_soul = fleet_dir / "SOUL.md"
+        assistant = {
+            "id": assistant_id,
+            "name": name,
+            "kind": kind,
+            "purpose": purpose,
+        }
         runtime_soul = runtime_dir / "SOUL.md"
 
         if dry_run:
@@ -244,13 +229,12 @@ def sync_fleet_assistants(
                     f"{', '.join(skills)}"
                 )
         else:
-            if fleet_dir.is_dir():
-                write_file(fleet_soul, soul_content, mode=0o660)
-            if runtime_dir.is_dir():
-                write_file(
-                    runtime_soul,
-                    soul_content,
-                    mode=0o660,
+            if fleet_dir.is_dir() and runtime_dir.is_dir():
+                reconcile_assistant_files(
+                    assistant,
+                    owner,
+                    fleet_dir,
+                    runtime_dir,
                     uid=CONTAINER_UID,
                 )
                 skills = sync_shared_skills(source_root, runtime_dir, dry_run=False)

@@ -19,6 +19,7 @@ fi
 image_id="$(jq -r '.image_id' "${record}")"
 recorded_commit="$(jq -r '.source_commit' "${record}")"
 source_commit="$(git -C "${repository_root}" rev-parse HEAD)"
+expected_hermes_version="$(<"${repository_root}/platform/HERMES_VERSION")"
 if [[ "${recorded_commit}" != "${source_commit}" ]]; then
   echo "error: image record does not match the checked-out source" >&2
   exit 1
@@ -32,6 +33,22 @@ if [[ "${actual_version}" != "${version}" ]]; then
   echo "error: image version label mismatch" >&2
   exit 1
 fi
+actual_revision="$(
+  docker image inspect "${image_id}" \
+    --format '{{index .Config.Labels "org.opencontainers.image.revision"}}'
+)"
+actual_hermes_version="$(
+  docker image inspect "${image_id}" \
+    --format '{{index .Config.Labels "io.aidee.hermes.version"}}'
+)"
+if [[ "${actual_revision}" != "${source_commit}" ]]; then
+  echo "error: image source revision label mismatch" >&2
+  exit 1
+fi
+if [[ "${actual_hermes_version}" != "${expected_hermes_version}" ]]; then
+  echo "error: image Hermes version label mismatch" >&2
+  exit 1
+fi
 
 docker run \
   --rm \
@@ -41,7 +58,7 @@ docker run \
   --tmpfs /tmp:rw,nosuid,nodev,noexec,size=256m \
   "${image_id}" \
   sh -c '
-    test "$(id -u)" = "10000"
+    test "$(id -u hermes)" = "10000"
     hermes --version
     opencode --version
     gh --version

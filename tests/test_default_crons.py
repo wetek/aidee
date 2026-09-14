@@ -37,6 +37,10 @@ if [[ "$1" == "cron" && "$2" == "create" ]]; then
   done
   exit 0
 fi
+if [[ "$1" == "cron" && "$2" == "edit" ]]; then
+  printf '%s\n' "$*" >> "$AIDEE_TEST_CALLS"
+  exit 0
+fi
 exit 1
 """
         )
@@ -141,6 +145,28 @@ exit 1
             self.assertNotIn("every 24h", create_calls)
             self.assertIn("every 6h", create_calls)
             self.assertIn("--name Aidee fleet health watchdog", create_calls)
+
+    def test_refreshes_existing_job_with_known_id(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            environment, calls = self.setUpHermes(directory)
+            Path(environment["AIDEE_TEST_JOBS"]).write_text(
+                "  abcdef123456 [active]\n"
+                "    Name:      Aidee daily update check\n\n"
+                "  fedcba654321 [active]\n"
+                "    Name:      Aidee fleet health watchdog\n"
+            )
+            result = subprocess.run(
+                ["python3", str(TOOL), "--approved"],
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            recorded = calls.read_text()
+            self.assertEqual(recorded.count("cron edit"), 2)
+            self.assertIn("cron edit abcdef123456", recorded)
+            self.assertIn("cron edit fedcba654321", recorded)
 
     def test_requires_owner_approval(self):
         with tempfile.TemporaryDirectory() as temporary_directory:

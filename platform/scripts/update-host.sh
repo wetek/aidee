@@ -4,16 +4,17 @@ set -Eeuo pipefail
 release=""
 owner_name=""
 approved=false
+mode=""
+AIDEE_REPOSITORY="${AIDEE_REPOSITORY:-https://github.com/wetek/aidee.git}"
 
 usage() {
   cat <<'EOF'
 Usage:
-  sudo ./platform/scripts/update-host.sh \
-    --release VERSION \
-    --owner-name NAME \
-    --approved
+  sudo ./platform/scripts/update-host.sh --release VERSION --preview
+  sudo ./platform/scripts/update-host.sh --release VERSION --apply --approved \
+    [--owner-name NAME]
 
-Run from a clean checkout of the target tagged release.
+Preview fetches and validates the exact tag but changes no active state.
 EOF
 }
 
@@ -26,6 +27,14 @@ while (( $# > 0 )); do
     --owner-name)
       owner_name="${2:-}"
       shift 2
+      ;;
+    --preview)
+      mode="preview"
+      shift
+      ;;
+    --apply)
+      mode="apply"
+      shift
       ;;
     --approved)
       approved=true
@@ -46,7 +55,11 @@ if [[ "${EUID}" -ne 0 ]]; then
   echo "error: run with sudo" >&2
   exit 1
 fi
-if [[ "${approved}" != true ]]; then
+if [[ "${mode}" != "preview" && "${mode}" != "apply" ]]; then
+  echo "error: choose --preview or --apply" >&2
+  exit 1
+fi
+if [[ "${mode}" == "apply" && "${approved}" != true ]]; then
   echo "error: owner approval is required; pass --approved" >&2
   exit 1
 fi
@@ -54,8 +67,8 @@ if [[ ! "${release}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]+$ ]]; then
   echo "error: invalid release" >&2
   exit 1
 fi
-if [[ -z "${owner_name}" || "${owner_name}" == *$'\n'* ]]; then
-  echo "error: owner name must be one non-empty line" >&2
+if [[ "${owner_name}" == *$'\n'* ]]; then
+  echo "error: owner name must be one line" >&2
   exit 1
 fi
 
@@ -64,59 +77,52 @@ candidate_root="$(cd -- "${script_dir}/../.." && pwd)"
 candidate_tag="$(
   git -C "${candidate_root}" describe --tags --exact-match 2>/dev/null || true
 )"
-if [[ "${candidate_tag}" != "${release}" ]]; then
-  echo "error: candidate checkout is not tagged ${release}" >&2
-  exit 1
-fi
-if [[ -n "$(git -C "${candidate_root}" status --porcelain)" ]]; then
-  echo "error: candidate checkout is not clean" >&2
-  exit 1
-fi
-if [[ "$(<"${candidate_root}/LATEST")" != "${release}" ]]; then
-  echo "error: LATEST does not match ${release}" >&2
-  exit 1
+release_dir="/opt/aidee/releases/${release}"
+if [[ "${candidate_tag}" == "${release}" ]] &&
+  [[ -z "$(git -C "${candidate_root}" status --porcelain)" ]]
+then
+  if [[ "${candidate_root}" != "${release_dir}" ]]; then
+    install -d -m 0755 -o root -g root /opt/aidee/releases
+    if [[ ! -e "${release_dir}" ]]; then
+      git clone --local --branch "${release}" "${candidate_root}" "${release_dir}"
+    fi
+  fi
+else
+  install -d -m 0755 -o root -g root /opt/aidee/releases
 fi
 
-release_dir="/opt/aidee/releases/${release}"
 if [[ ! -d "${release_dir}/.git" ]]; then
-  install -d -m 0755 -o root -g root /opt/aidee/releases
+  temporary="/opt/aidee/releases/.${release}.$$"
+  trap 'rm -rf "${temporary}"' EXIT
   git clone \
     --branch "${release}" \
     --depth 1 \
-    https://github.com/wetek/aidee.git \
-    "${release_dir}"
+    "${AIDEE_REPOSITORY}" \
+    "${temporary}"
+  mv "${temporary}" "${release_dir}"
+  trap - EXIT
 fi
 
-installed_source="/opt/aidee/source"
-if [[ -d "${installed_source}" && ! -L "${installed_source}" ]]; then
-  previous_release="$(
-    git -C "${installed_source}" describe --tags --exact-match 2>/dev/null ||
-      echo "legacy"
-  )"
-  previous_dir="/opt/aidee/releases/${previous_release}"
-  if [[ -e "${previous_dir}" ]]; then
-    echo "error: previous release archive already exists: ${previous_dir}" >&2
-    exit 1
-  fi
-  mv "${installed_source}" "${previous_dir}"
+fetched_tag="$(git -C "${release_dir}" describe --tags --exact-match 2>/dev/null || true)"
+if [[ "${fetched_tag}" != "${release}" ]] ||
+  [[ -n "$(git -C "${release_dir}" status --porcelain)" ]] ||
+  [[ "$(<"${release_dir}/LATEST")" != "${release}" ]]
+then
+  echo "error: cached candidate is not the clean exact release ${release}" >&2
+  exit 1
 fi
 
-ln -sfn "releases/${release}" "${installed_source}"
-
-jq -n --arg name "${owner_name}" '{name: $name}' > /etc/aidee/owner.json
-chmod 0644 /etc/aidee/owner.json
-
-"${installed_source}/platform/scripts/install-admin-helper.sh"
-"${installed_source}/platform/scripts/install-dashboard-plugins.sh"
-
-controller_user="${AIDEE_CONTROLLER_USER:-aidee-controller}"
-controller_home="$(getent passwd "${controller_user}" | cut -d: -f6 || true)"
-if [[ -n "${controller_home}" && -x "${controller_home}/.local/bin/hermes" ]]; then
-  "${installed_source}/platform/scripts/install-controller-service.sh"
+command=(
+  python3
+  "${release_dir}/platform/update/reconcile.py"
+  --release "${release}"
+  --candidate "${release_dir}"
+  --mode "${mode}"
+)
+if [[ "${approved}" == true ]]; then
+  command+=(--approved)
 fi
-
-"${installed_source}/platform/scripts/build-assistant-image.sh"
-"${installed_source}/platform/scripts/validate-assistant-image.sh"
-
-echo "Aidee host updated to ${release}."
-echo "Controller knowledge sync remains a separate owner-approved action."
+if [[ -n "${owner_name}" ]]; then
+  command+=(--owner-name "${owner_name}")
+fi
+"${command[@]}"

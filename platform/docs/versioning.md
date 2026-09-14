@@ -10,7 +10,10 @@ Every assistant records an exact Aidee version in the private fleet registry. Re
 
 The root `LATEST` file names the newest published tag for update discovery. Controllers may preview that tag, but they must not activate it without owner approval.
 
-Controller knowledge sync and host updates are separate. Knowledge sync runs without root and refreshes shared Aidee skills. Host updates change `/opt/aidee`, packages, or system services and require a documented owner-approved process.
+Alpha 13 and later use one owner-approved fleet updater for the host,
+controller knowledge, pinned Hermes runtime, and registered assistants. The
+controller's daily job only discovers releases and gives the owner the
+documented SSH preview command.
 
 ## Release process
 
