@@ -2,6 +2,7 @@
 import importlib.util
 import json
 import os
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -22,10 +23,10 @@ class AdminHelperTests(unittest.TestCase):
         image_id = "sha256:" + "a" * 64
         image_dir = state_root / "runtime" / "images"
         image_dir.mkdir(parents=True)
-        (image_dir / "v0.1.0-alpha.14.json").write_text(
+        (image_dir / "v0.1.0-alpha.15.json").write_text(
             json.dumps(
                 {
-                    "aidee_version": "v0.1.0-alpha.14",
+                    "aidee_version": "v0.1.0-alpha.15",
                     "image_id": image_id,
                     "source_commit": "testcommit",
                     "validation": "validated",
@@ -72,7 +73,7 @@ class AdminHelperTests(unittest.TestCase):
                 if command[:3] == ["docker", "image", "inspect"]:
                     if "org.opencontainers.image.revision" in command[-1]:
                         return "testcommit"
-                    return "v0.1.0-alpha.14"
+                    return "v0.1.0-alpha.15"
                 if command[:3] == ["git", "-C", str(ROOT)]:
                     return "testcommit"
                 if command[:2] == ["docker", "ps"]:
@@ -303,7 +304,7 @@ class AdminHelperTests(unittest.TestCase):
                 if command[:3] == ["docker", "image", "inspect"]:
                     if "org.opencontainers.image.revision" in command[-1]:
                         return "testcommit"
-                    return "v0.1.0-alpha.14"
+                    return "v0.1.0-alpha.15"
                 if command[:3] == ["git", "-C", str(ROOT)]:
                     return "testcommit"
                 if command[:2] == ["docker", "ps"]:
@@ -403,7 +404,7 @@ class AdminHelperTests(unittest.TestCase):
                 if command[:3] == ["docker", "image", "inspect"]:
                     if "org.opencontainers.image.revision" in command[-1]:
                         return "testcommit"
-                    return "v0.1.0-alpha.14"
+                    return "v0.1.0-alpha.15"
                 if command[:3] == ["git", "-C", str(ROOT)]:
                     return "testcommit"
                 if command[:2] == ["docker", "ps"]:
@@ -492,7 +493,7 @@ class AdminHelperTests(unittest.TestCase):
                 if command[:3] == ["docker", "image", "inspect"]:
                     if "org.opencontainers.image.revision" in command[-1]:
                         return "testcommit"
-                    return "v0.1.0-alpha.14"
+                    return "v0.1.0-alpha.15"
                 if command[:3] == ["git", "-C", str(ROOT)]:
                     return "testcommit"
                 if command[:2] == ["docker", "ps"]:
@@ -590,7 +591,7 @@ class AdminHelperTests(unittest.TestCase):
                 if command[:3] == ["docker", "image", "inspect"]:
                     if "org.opencontainers.image.revision" in command[-1]:
                         return "testcommit"
-                    return "v0.1.0-alpha.14"
+                    return "v0.1.0-alpha.15"
                 if command[:3] == ["git", "-C", str(ROOT)]:
                     return "testcommit"
                 if command[:2] == ["docker", "ps"]:
@@ -934,7 +935,7 @@ class AdminHelperTests(unittest.TestCase):
                     if command[:3] == ["docker", "image", "inspect"]:
                         if "org.opencontainers.image.revision" in command[-1]:
                             return "testcommit"
-                        return "v0.1.0-alpha.14"
+                        return "v0.1.0-alpha.15"
                     if command[:3] == ["git", "-C", str(ROOT)]:
                         return "testcommit"
                     if command[:2] == ["docker", "ps"]:
@@ -1035,6 +1036,32 @@ class AdminHelperTests(unittest.TestCase):
                     )
                     self.assertGreater(len(skill_file.read_text()), 0)
 
+    def test_installed_helper_imports_onboarding_from_install_dir(self):
+        installer = (ROOT / "platform/scripts/install-admin-helper.sh").read_text()
+        self.assertIn(
+            'install -m 0644 -o root -g root "${onboarding_module}"',
+            installer,
+        )
+        self.assertIn("${install_dir}/onboarding_state.py", installer)
 
-if __name__ == "__main__":
-    unittest.main()
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            install_dir = Path(temporary_directory) / "usr" / "local" / "lib" / "aidee"
+            install_dir.mkdir(parents=True)
+            shutil.copy(
+                ROOT / "platform/admin/assistant_state.py",
+                install_dir / "assistant_state.py",
+            )
+            shutil.copy(
+                ROOT / "platform/setup/onboarding_state.py",
+                install_dir / "onboarding_state.py",
+            )
+            spec = importlib.util.spec_from_file_location(
+                "installed_assistant_state",
+                install_dir / "assistant_state.py",
+            )
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            self.assertTrue(hasattr(module, "default_onboarding_status"))
+            status = module.default_onboarding_status("personal")
+            self.assertEqual(status["schema_version"], 2)
+            self.assertEqual(status["role"], "assistant")

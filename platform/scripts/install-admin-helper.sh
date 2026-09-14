@@ -4,6 +4,7 @@ set -Eeuo pipefail
 AIDEE_CONTROLLER_USER="${AIDEE_CONTROLLER_USER:-aidee-controller}"
 source_script="/opt/aidee/source/platform/admin/aidee_admin.py"
 state_module="/opt/aidee/source/platform/admin/assistant_state.py"
+onboarding_module="/opt/aidee/source/platform/setup/onboarding_state.py"
 install_dir="/usr/local/lib/aidee"
 installed_script="${install_dir}/aidee-admin"
 service="aidee-admin.service"
@@ -12,7 +13,7 @@ if [[ "${EUID}" -ne 0 ]]; then
   echo "error: run with sudo on the Aidee host" >&2
   exit 1
 fi
-if [[ ! -f "${source_script}" || ! -f "${state_module}" ]]; then
+if [[ ! -f "${source_script}" || ! -f "${state_module}" || ! -f "${onboarding_module}" ]]; then
   echo "error: administration helper source is missing" >&2
   exit 1
 fi
@@ -28,6 +29,7 @@ install -d -m 0755 -o root -g root "${install_dir}"
 install -d -m 0755 -o root -g root /etc/aidee/images
 install -m 0755 -o root -g root "${source_script}" "${installed_script}"
 install -m 0644 -o root -g root "${state_module}" "${install_dir}/assistant_state.py"
+install -m 0644 -o root -g root "${onboarding_module}" "${install_dir}/onboarding_state.py"
 
 cat > "/etc/systemd/system/${service}" <<EOF
 [Unit]

@@ -9,9 +9,28 @@ from pathlib import Path
 
 import yaml
 
-SETUP_DIR = Path(__file__).resolve().parents[1] / "setup"
-if str(SETUP_DIR) not in sys.path:
-    sys.path.insert(0, str(SETUP_DIR))
+def _onboarding_module_directories():
+    here = Path(__file__).resolve().parent
+    source_setup = Path(
+        os.environ.get("AIDEE_SOURCE_ROOT", "/opt/aidee/source")
+    ) / "platform" / "setup"
+    candidates = [here, here.parent / "setup", source_setup]
+    return candidates
+
+
+def _load_onboarding_directory():
+    for directory in _onboarding_module_directories():
+        if (directory / "onboarding_state.py").is_file():
+            path = str(directory)
+            if path not in sys.path:
+                sys.path.insert(0, path)
+            return directory
+    raise ImportError(
+        "onboarding_state.py is not installed with the administration helper"
+    )
+
+
+_load_onboarding_directory()
 from onboarding_state import (
     default_status,
     mark_step,

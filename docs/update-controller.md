@@ -22,23 +22,23 @@ the fleet update from the owner's SSH terminal with sudo.
 
 ### One-time bootstrap from Alpha 12 or older
 
-Older releases do not contain the fleet updater. Fetch the exact Alpha 14 tag
+Older releases do not contain the fleet updater. Fetch the exact Alpha 15 tag
 and preview it:
 
 ~~~bash
 sudo install -d -m 0755 /opt/aidee/releases
-sudo git clone --branch v0.1.0-alpha.14 --depth 1 \
+sudo git clone --branch v0.1.0-alpha.15 --depth 1 \
   https://github.com/wetek/aidee.git \
-  /opt/aidee/releases/v0.1.0-alpha.14
-sudo /opt/aidee/releases/v0.1.0-alpha.14/platform/scripts/update-host.sh \
-  --release v0.1.0-alpha.14 --preview
+  /opt/aidee/releases/v0.1.0-alpha.15
+sudo /opt/aidee/releases/v0.1.0-alpha.15/platform/scripts/update-host.sh \
+  --release v0.1.0-alpha.15 --preview
 ~~~
 
 After reviewing the preview and explicitly approving it, run:
 
 ~~~bash
-sudo /opt/aidee/releases/v0.1.0-alpha.14/platform/scripts/update-host.sh \
-  --release v0.1.0-alpha.14 --apply --approved
+sudo /opt/aidee/releases/v0.1.0-alpha.15/platform/scripts/update-host.sh \
+  --release v0.1.0-alpha.15 --apply --approved
 ~~~
 
 ### Future updates

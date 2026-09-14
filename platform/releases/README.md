@@ -40,4 +40,7 @@ controller-only update scheduling.
 `v0.1.0-alpha.14` adds managed Hermes prompt and agent-cache invalidation plus
 locked, resumable controller and assistant onboarding.
 
+`v0.1.0-alpha.15` installs the onboarding state module with the administration
+helper so existing hosts can finish an Alpha 14 apply.
+
 

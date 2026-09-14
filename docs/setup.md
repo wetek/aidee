@@ -94,13 +94,13 @@ Missing swap is a warning, not a setup blocker. Do not create swap automatically
 
 - Which dashboard access method do they want?
   1. Tailscale private HTTPS address (recommended and automated).
-  2. Cloudflare custom subdomain (planned, not automated in Alpha 14).
+  2. Cloudflare custom subdomain (planned, not automated in Alpha 15).
   3. Temporary SSH tunnel.
   4. Another method.
 - Do they want the verified dashboard URL as the Telegram bot menu button?
 - Does the provider firewall currently expose SSH to the whole internet?
 
-A domain is optional. Keep the dashboard bound to server loopback. Use Tailscale for routine private phone access or an SSH tunnel for temporary desktop access. If the owner selects Cloudflare, stop before generating the Alpha 14 plan and explain that its adapter is not implemented yet.
+A domain is optional. Keep the dashboard bound to server loopback. Use Tailscale for routine private phone access or an SSH tunnel for temporary desktop access. If the owner selects Cloudflare, stop before generating the Alpha 15 plan and explain that its adapter is not implemented yet.
 
 After the server is on the tailnet, the controller gives the owner the phone steps: install the Tailscale app, sign in with the same email used to approve the server, turn the VPN on, then open the dashboard from the Telegram bot menu. See `platform/docs/tailscale.md`.
 
@@ -177,7 +177,7 @@ Use this shape:
 ~~~json
 {
   "schema_version": 1,
-  "release": "v0.1.0-alpha.14",
+  "release": "v0.1.0-alpha.15",
   "owner": {
     "name": "Example Owner",
     "experience": "guided"
@@ -200,7 +200,7 @@ Use this shape:
     "assistants": [
       {
         "schema_version": 1,
-        "release": "v0.1.0-alpha.14",
+        "release": "v0.1.0-alpha.15",
         "owner": {
           "name": "Example Owner",
           "experience": "guided"
@@ -223,7 +223,7 @@ Use this shape:
       }
       ~~~
 
-      Alpha 14 accepts:
+      Alpha 15 accepts:
 
       - Experience: `beginner`, `guided`, or `advanced`.
       - Dashboard access: `tailscale` or `ssh_tunnel`.
@@ -232,9 +232,9 @@ Use this shape:
       - Private Git: `later` or `disabled`.
       - Daily update check: `true` or `false`.
 
-      Cloudflare and immediate private Git setup remain planned options. Do not place them in an Alpha 14 setup plan.
+      Cloudflare and immediate private Git setup remain planned options. Do not place them in an Alpha 15 setup plan.
 
-      Alpha 14 delivers update notices through Telegram. Set `daily_check` to `false` when Telegram is not selected.
+      Alpha 15 delivers update notices through Telegram. Set `daily_check` to `false` when Telegram is not selected.
 
       ## Bootstrap handoff
 
@@ -243,7 +243,7 @@ Use this shape:
       ~~~bash
       sudo apt-get update
       sudo apt-get install -y git
-      git clone --branch v0.1.0-alpha.14 --depth 1 https://github.com/wetek/aidee.git
+      git clone --branch v0.1.0-alpha.15 --depth 1 https://github.com/wetek/aidee.git
 cd aidee
 cat > setup-plan.json <<'AIDEE_PLAN'
 SETUP_PLAN_JSON

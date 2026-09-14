@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-AIDEE_RELEASE="v0.1.0-alpha.14"
+AIDEE_RELEASE="v0.1.0-alpha.15"
 AIDEE_REPOSITORY="https://github.com/wetek/aidee.git"
 AIDEE_CONTROLLER_USER="${AIDEE_CONTROLLER_USER:-aidee-controller}"
 AIDEE_STATE_DIR="${AIDEE_STATE_DIR:-/var/lib/aidee}"
