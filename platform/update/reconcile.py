@@ -20,6 +20,11 @@ RELEASE_PATTERN = r"^v[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]+$"
 ASSISTANT_ID_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
 UPDATE_JOB = "Aidee daily update check"
 WATCHDOG_JOB = "Aidee fleet health watchdog"
+# s6 plus Hermes dashboard often needs more than 90s after create. Keep a
+# heartbeat while polling docker healthy and the loopback dashboard.
+CONTAINER_WAIT_ATTEMPTS = 240
+DASHBOARD_WAIT_ATTEMPTS = 240
+WAIT_NOTE_SECONDS = 15
 
 
 class ReconcileError(RuntimeError):
@@ -468,7 +473,13 @@ def container_image(runner, name):
     return result.stdout.strip() if result.returncode == 0 else None
 
 
-def wait_healthy(runner, name, attempts=90, now=time.monotonic, sleep=time.sleep):
+def wait_healthy(
+    runner,
+    name,
+    attempts=CONTAINER_WAIT_ATTEMPTS,
+    now=time.monotonic,
+    sleep=time.sleep,
+):
     started = now()
     last_note = 0
     for _ in range(attempts):
@@ -482,7 +493,7 @@ def wait_healthy(runner, name, attempts=90, now=time.monotonic, sleep=time.sleep
         if result.stdout.strip() in {"healthy", "running"}:
             return
         elapsed = int(now() - started)
-        if elapsed - last_note >= 15:
+        if elapsed - last_note >= WAIT_NOTE_SECONDS:
             print(f"Still waiting for {name} ({elapsed}s)...", flush=True)
             last_note = elapsed
         sleep(1)
@@ -516,7 +527,11 @@ def dashboard_response(runner, assistant):
 
 
 def wait_dashboard(
-    runner, assistant, attempts=90, now=time.monotonic, sleep=time.sleep
+    runner,
+    assistant,
+    attempts=DASHBOARD_WAIT_ATTEMPTS,
+    now=time.monotonic,
+    sleep=time.sleep,
 ):
     started = now()
     last_note = 0
@@ -525,7 +540,7 @@ def wait_dashboard(
         if not result.returncode and re.fullmatch(r"[234][0-9]{2}", result.stdout):
             return
         elapsed = int(now() - started)
-        if elapsed - last_note >= 15:
+        if elapsed - last_note >= WAIT_NOTE_SECONDS:
             print(
                 f"Still waiting for {assistant['id']} dashboard ({elapsed}s)...",
                 flush=True,
@@ -667,6 +682,26 @@ def validated_image(candidate, release):
     if inspected.returncode:
         raise ReconcileError("validated assistant image is not present")
     return image_id
+
+
+def ensure_assistant_image(runner, candidate, release):
+    """Reuse a matching validated image record. Build only when it is missing."""
+    try:
+        image_id = validated_image(candidate, release)
+    except ReconcileError:
+        image_id = None
+    if image_id:
+        print(f"Using already validated assistant image for {release}.", flush=True)
+        return image_id
+    runner.run(
+        [str(candidate / "platform/scripts/build-assistant-image.sh")],
+        stream=True,
+    )
+    runner.run(
+        [str(candidate / "platform/scripts/validate-assistant-image.sh")],
+        stream=True,
+    )
+    return validated_image(candidate, release)
 
 
 def activate_release(candidate, release, code_root):
@@ -1066,15 +1101,7 @@ def main():
     )
     controller_home = str(controller_home)
     reporter.next()
-    runner.run(
-        [str(candidate / "platform/scripts/build-assistant-image.sh")],
-        stream=True,
-    )
-    runner.run(
-        [str(candidate / "platform/scripts/validate-assistant-image.sh")],
-        stream=True,
-    )
-    image_id = validated_image(candidate, arguments.release)
+    image_id = ensure_assistant_image(runner, candidate, arguments.release)
     if requested_owner:
         atomic_write(
             Path("/etc/aidee/owner.json"),

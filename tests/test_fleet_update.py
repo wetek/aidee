@@ -660,6 +660,76 @@ class FleetUpdateTests(unittest.TestCase):
             )
         self.assertIn("Still waiting for aidee-pilot (15s)...", output.getvalue())
 
+    def test_dashboard_wait_outlasts_slow_hermes_startup(self):
+        self.assertGreaterEqual(reconcile.DASHBOARD_WAIT_ATTEMPTS, 180)
+        self.assertGreaterEqual(reconcile.CONTAINER_WAIT_ATTEMPTS, 180)
+
+        class Delayed:
+            def __init__(self):
+                self.calls = 0
+
+            def run(self, command, check=True, stream=False):
+                self.calls += 1
+                if self.calls > 120:
+                    return subprocess.CompletedProcess(command, 0, "200", "")
+                return subprocess.CompletedProcess(command, 7, "000", "failed")
+
+        clock = [0]
+
+        def now():
+            return clock[0]
+
+        def sleep(_seconds):
+            clock[0] += 1
+
+        assistant = {
+            "id": "control-tower",
+            "dashboard": {"host_port": 9202},
+        }
+        output = io.StringIO()
+        with mock.patch("sys.stdout", output):
+            reconcile.wait_dashboard(
+                Delayed(), assistant, attempts=130, now=now, sleep=sleep
+            )
+        notes = output.getvalue()
+        self.assertIn("Still waiting for control-tower dashboard (15s)...", notes)
+        self.assertIn("Still waiting for control-tower dashboard (90s)...", notes)
+        self.assertIn("Still waiting for control-tower dashboard (105s)...", notes)
+
+    def test_apply_skips_image_rebuild_when_validated_record_matches(self):
+        runner = mock.Mock()
+        image_id = "sha256:" + "c" * 64
+        candidate = Path("/opt/aidee/releases/v0.1.0-alpha.23")
+        with mock.patch.object(reconcile, "validated_image", return_value=image_id):
+            result = reconcile.ensure_assistant_image(
+                runner, candidate, "v0.1.0-alpha.23"
+            )
+        self.assertEqual(result, image_id)
+        runner.run.assert_not_called()
+
+    def test_apply_builds_image_when_validated_record_is_missing(self):
+        runner = mock.Mock()
+        image_id = "sha256:" + "d" * 64
+        candidate = Path("/tmp/candidate")
+        with mock.patch.object(
+            reconcile,
+            "validated_image",
+            side_effect=[reconcile.ReconcileError("missing"), image_id],
+        ):
+            result = reconcile.ensure_assistant_image(
+                runner, candidate, "v0.1.0-alpha.23"
+            )
+        self.assertEqual(result, image_id)
+        self.assertEqual(runner.run.call_count, 2)
+        self.assertIn(
+            "build-assistant-image.sh",
+            runner.run.call_args_list[0].args[0][0],
+        )
+        self.assertIn(
+            "validate-assistant-image.sh",
+            runner.run.call_args_list[1].args[0][0],
+        )
+
     def test_streamed_command_keeps_zero_exit(self):
         result = reconcile.Runner().run(
             [sys.executable, "-c", "raise SystemExit(0)"], stream=True

@@ -66,5 +66,7 @@ notice as tap-to-send buttons, and reads the current tag from `LATEST`.
 
 `v0.1.0-alpha.23` stops the installed helper from importing `release` at listen time.
 
+`v0.1.0-alpha.24` waits 240s for dashboards and skips rebuilding a validated same-tag image.
+
 
 
