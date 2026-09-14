@@ -31,7 +31,6 @@
 pilot.local.*
 *.private.*
 
-.agents/
 .cursor/plans/
 skills-lock.json
 

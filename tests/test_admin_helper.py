@@ -22,10 +22,10 @@ class AdminHelperTests(unittest.TestCase):
         image_id = "sha256:" + "a" * 64
         image_dir = state_root / "runtime" / "images"
         image_dir.mkdir(parents=True)
-        (image_dir / "v0.1.0-alpha.11.json").write_text(
+        (image_dir / "v0.1.0-alpha.12.json").write_text(
             json.dumps(
                 {
-                    "aidee_version": "v0.1.0-alpha.11",
+                    "aidee_version": "v0.1.0-alpha.12",
                     "image_id": image_id,
                     "source_commit": "testcommit",
                     "validation": "validated",
@@ -72,7 +72,7 @@ class AdminHelperTests(unittest.TestCase):
                 if command[:3] == ["docker", "image", "inspect"]:
                     if "org.opencontainers.image.revision" in command[-1]:
                         return "testcommit"
-                    return "v0.1.0-alpha.11"
+                    return "v0.1.0-alpha.12"
                 if command[:3] == ["git", "-C", str(ROOT)]:
                     return "testcommit"
                 if command[:2] == ["docker", "ps"]:
@@ -200,6 +200,16 @@ class AdminHelperTests(unittest.TestCase):
                 (runtime_memories / "MEMORY.md").read_text(),
                 "# Memory\n",
             )
+            runtime_repos = (
+                state_root
+                / "runtime"
+                / "assistants"
+                / "personal"
+                / "data"
+                / "aidee"
+                / "repos"
+            )
+            self.assertTrue(runtime_repos.is_dir())
             runtime_soul = (
                 state_root
                 / "runtime"
@@ -224,6 +234,10 @@ class AdminHelperTests(unittest.TestCase):
             self.assertIn("120 words or fewer", soul_text)
             self.assertIn("Interactive Telegram Choices", soul_text)
             self.assertIn("interactive clarify tool with clickable options", soul_text)
+            self.assertIn(
+                "Store every coding-task repository under /opt/data/aidee/repos.",
+                soul_text,
+            )
             self.assertNotIn("Software Engineering Standards", soul_text)
             self.assertNotIn("memories:/opt/data/memories", flattened)
             skin_path = (
@@ -272,7 +286,7 @@ class AdminHelperTests(unittest.TestCase):
                 if command[:3] == ["docker", "image", "inspect"]:
                     if "org.opencontainers.image.revision" in command[-1]:
                         return "testcommit"
-                    return "v0.1.0-alpha.11"
+                    return "v0.1.0-alpha.12"
                 if command[:3] == ["git", "-C", str(ROOT)]:
                     return "testcommit"
                 if command[:2] == ["docker", "ps"]:
@@ -372,7 +386,7 @@ class AdminHelperTests(unittest.TestCase):
                 if command[:3] == ["docker", "image", "inspect"]:
                     if "org.opencontainers.image.revision" in command[-1]:
                         return "testcommit"
-                    return "v0.1.0-alpha.11"
+                    return "v0.1.0-alpha.12"
                 if command[:3] == ["git", "-C", str(ROOT)]:
                     return "testcommit"
                 if command[:2] == ["docker", "ps"]:
@@ -461,7 +475,7 @@ class AdminHelperTests(unittest.TestCase):
                 if command[:3] == ["docker", "image", "inspect"]:
                     if "org.opencontainers.image.revision" in command[-1]:
                         return "testcommit"
-                    return "v0.1.0-alpha.11"
+                    return "v0.1.0-alpha.12"
                 if command[:3] == ["git", "-C", str(ROOT)]:
                     return "testcommit"
                 if command[:2] == ["docker", "ps"]:
@@ -559,7 +573,7 @@ class AdminHelperTests(unittest.TestCase):
                 if command[:3] == ["docker", "image", "inspect"]:
                     if "org.opencontainers.image.revision" in command[-1]:
                         return "testcommit"
-                    return "v0.1.0-alpha.11"
+                    return "v0.1.0-alpha.12"
                 if command[:3] == ["git", "-C", str(ROOT)]:
                     return "testcommit"
                 if command[:2] == ["docker", "ps"]:
@@ -903,7 +917,7 @@ class AdminHelperTests(unittest.TestCase):
                     if command[:3] == ["docker", "image", "inspect"]:
                         if "org.opencontainers.image.revision" in command[-1]:
                             return "testcommit"
-                        return "v0.1.0-alpha.11"
+                        return "v0.1.0-alpha.12"
                     if command[:3] == ["git", "-C", str(ROOT)]:
                         return "testcommit"
                     if command[:2] == ["docker", "ps"]:

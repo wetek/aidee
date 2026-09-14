@@ -31,4 +31,6 @@ Each release will include:
 
 `v0.1.0-alpha.11` bundles the complete 9-skill Matt Pocock engineering suite, interactive Telegram choice directives, and automated fleet assistant update synchronization.
 
+`v0.1.0-alpha.12` publishes repository-local coding-agent skills and gives every assistant an isolated `/opt/data/aidee/repos` workspace for coding-task repositories.
+
 

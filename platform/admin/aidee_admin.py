@@ -27,6 +27,7 @@ CONTROLLER_USER = os.environ.get("AIDEE_CONTROLLER_USER", "aidee-controller")
 CONTAINER_UID = 10000
 MAX_REQUEST_BYTES = 65536
 ASSISTANT_ID = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
+CONTAINER_REPOS_ROOT = "/opt/data/aidee/repos"
 DASHBOARD_USERNAME = "aidee"
 DASHBOARD_USERNAME_KEY = "HERMES_DASHBOARD_BASIC_AUTH_USERNAME"
 DASHBOARD_PASSWORD_KEY = "HERMES_DASHBOARD_BASIC_AUTH_PASSWORD"
@@ -260,6 +261,7 @@ def build_soul_document(assistant, owner):
         "You run in an isolated Aidee container. Use only your approved files, tools,",
         "repositories, and services. Never expose credentials or another assistant's",
         "data.",
+        f"Store every coding-task repository under {CONTAINER_REPOS_ROOT}.",
         "",
         "## Communication Standards (Unslop)",
         "- Concise response budget: default to 120 words or fewer. Expand only when safety, a decision, or an error requires it.",
@@ -324,6 +326,9 @@ def create_assistant_state(assistant, image_id, dashboard_url):
     ensure_directory(runtime_dir / "skins", CONTAINER_UID, controller_gid, 0o770)
     ensure_directory(runtime_dir / "memories", CONTAINER_UID, controller_gid, 0o770)
     ensure_directory(runtime_dir / "skills", CONTAINER_UID, controller_gid, 0o770)
+    ensure_directory(
+        runtime_dir / "aidee" / "repos", CONTAINER_UID, controller_gid, 0o770
+    )
     ensure_directory(secret_dir, 0, 0, 0o700)
 
     sync_shared_skills(SOURCE_ROOT, runtime_dir, CONTAINER_UID, controller_gid)

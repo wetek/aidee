@@ -14,6 +14,9 @@ Aidee adds:
 
 The image contains no assistant identity, memory, repository, or credential.
 
+Provisioning creates `/opt/data/aidee/repos` in each assistant's private data
+mount. Coding agents clone and work on repositories only under that directory.
+
 Build and validate:
 
 ~~~bash

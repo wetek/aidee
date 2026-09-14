@@ -16,3 +16,6 @@ Provisioning creates one directory per assistant.
 ~~~
 
 The controller mounts approved paths into only that assistant's container. It never mounts the entire fleet directory.
+
+Each assistant also receives a private runtime directory at
+`/opt/data/aidee/repos`. Coding agents store all cloned repositories there.

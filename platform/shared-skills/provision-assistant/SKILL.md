@@ -81,9 +81,10 @@ For Telegram and Bot Identity:
 
 Default to least-privilege repository access:
 
-1. Avoid account-wide OAuth device authorization (`gh auth login`).
-2. Proactively generate and provide a dedicated SSH Deploy Key (write-enabled) scoped strictly to the target repository.
-3. Or request a fine-grained Personal Access Token (PAT) scoped exclusively to the specific repository with minimal permissions.
+1. Clone and store every coding-task repository under `/opt/data/aidee/repos`.
+2. Avoid account-wide OAuth device authorization (`gh auth login`).
+3. Proactively generate and provide a dedicated SSH Deploy Key (write-enabled) scoped strictly to the target repository.
+4. Or request a fine-grained Personal Access Token (PAT) scoped exclusively to the specific repository with minimal permissions.
 
 ## Validate
 
