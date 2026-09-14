@@ -407,6 +407,50 @@ class FleetUpdateTests(unittest.TestCase):
             self.assertTrue((legacy[0] / ".git").exists())
             self.assertFalse((runtime / "workspace").exists())
 
+    def test_reconciliation_relocates_when_canonical_name_is_a_dangling_symlink(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            runtime = Path(temporary) / "runtime/assistants/control-tower/data"
+            leftover = runtime / "control-tower"
+            leftover.mkdir(parents=True)
+            (leftover / ".git").mkdir()
+            (leftover / "README.md").write_text("old clone\n")
+            dest = runtime / "aidee" / "repos" / "control-tower"
+            dest.parent.mkdir(parents=True)
+            dest.symlink_to("/opt/data/control-tower")
+            with mock.patch("os.chown"):
+                moved = assistant_state.relocate_legacy_home_repos(
+                    runtime, gid=os.getgid()
+                )
+            self.assertFalse(leftover.exists())
+            canonical = runtime / "aidee/repos/control-tower"
+            self.assertTrue((canonical / "README.md").is_file())
+            self.assertFalse(canonical.is_symlink())
+            legacy = list((runtime / "aidee/legacy-home-repos").iterdir())
+            self.assertEqual(len(legacy), 1)
+            self.assertTrue(legacy[0].is_symlink())
+            self.assertTrue(any(str(canonical) == item for item in moved))
+
+    def test_reconciliation_relocates_when_canonical_name_is_a_file(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            runtime = Path(temporary) / "runtime/assistants/control-tower/data"
+            leftover = runtime / "control-tower"
+            leftover.mkdir(parents=True)
+            (leftover / ".git").mkdir()
+            (leftover / "README.md").write_text("old clone\n")
+            dest = runtime / "aidee" / "repos" / "control-tower"
+            dest.parent.mkdir(parents=True)
+            dest.write_text("not a checkout\n")
+            with mock.patch("os.chown"):
+                assistant_state.relocate_legacy_home_repos(
+                    runtime, gid=os.getgid()
+                )
+            self.assertFalse(leftover.exists())
+            canonical = runtime / "aidee/repos/control-tower"
+            self.assertTrue((canonical / "README.md").is_file())
+            legacy = list((runtime / "aidee/legacy-home-repos").iterdir())
+            self.assertEqual(len(legacy), 1)
+            self.assertTrue(legacy[0].is_file())
+
     def test_reconciliation_rejects_assistant_controlled_directory_symlink(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

@@ -71,23 +71,23 @@ is unavailable.
 
 ### One-time bootstrap from Alpha 12 or older
 
-Older releases do not contain the fleet updater. Fetch the exact Alpha 19 tag
+Older releases do not contain the fleet updater. Fetch the exact Alpha 20 tag
 and preview it:
 
 ~~~bash
 sudo install -d -m 0755 /opt/aidee/releases
-sudo git clone --branch v0.1.0-alpha.19 --depth 1 \
+sudo git clone --branch v0.1.0-alpha.20 --depth 1 \
   https://github.com/wetek/aidee.git \
-  /opt/aidee/releases/v0.1.0-alpha.19
-sudo /opt/aidee/releases/v0.1.0-alpha.19/platform/scripts/update-host.sh \
-  --release v0.1.0-alpha.19 --preview
+  /opt/aidee/releases/v0.1.0-alpha.20
+sudo /opt/aidee/releases/v0.1.0-alpha.20/platform/scripts/update-host.sh \
+  --release v0.1.0-alpha.20 --preview
 ~~~
 
 After reviewing the preview and explicitly approving it, run:
 
 ~~~bash
-sudo /opt/aidee/releases/v0.1.0-alpha.19/platform/scripts/update-host.sh \
-  --release v0.1.0-alpha.19 --apply --approved
+sudo /opt/aidee/releases/v0.1.0-alpha.20/platform/scripts/update-host.sh \
+  --release v0.1.0-alpha.20 --apply --approved
 ~~~
 
 ### Later SSH updates

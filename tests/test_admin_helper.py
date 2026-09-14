@@ -23,10 +23,10 @@ class AdminHelperTests(unittest.TestCase):
         image_id = "sha256:" + "a" * 64
         image_dir = state_root / "runtime" / "images"
         image_dir.mkdir(parents=True)
-        (image_dir / "v0.1.0-alpha.19.json").write_text(
+        (image_dir / "v0.1.0-alpha.20.json").write_text(
             json.dumps(
                 {
-                    "aidee_version": "v0.1.0-alpha.19",
+                    "aidee_version": "v0.1.0-alpha.20",
                     "image_id": image_id,
                     "source_commit": "testcommit",
                     "validation": "validated",
@@ -73,7 +73,7 @@ class AdminHelperTests(unittest.TestCase):
                 if command[:3] == ["docker", "image", "inspect"]:
                     if "org.opencontainers.image.revision" in command[-1]:
                         return "testcommit"
-                    return "v0.1.0-alpha.19"
+                    return "v0.1.0-alpha.20"
                 if command[:3] == ["git", "-C", str(ROOT)]:
                     return "testcommit"
                 if command[:2] == ["docker", "ps"]:
@@ -305,7 +305,7 @@ class AdminHelperTests(unittest.TestCase):
                 if command[:3] == ["docker", "image", "inspect"]:
                     if "org.opencontainers.image.revision" in command[-1]:
                         return "testcommit"
-                    return "v0.1.0-alpha.19"
+                    return "v0.1.0-alpha.20"
                 if command[:3] == ["git", "-C", str(ROOT)]:
                     return "testcommit"
                 if command[:2] == ["docker", "ps"]:
@@ -405,7 +405,7 @@ class AdminHelperTests(unittest.TestCase):
                 if command[:3] == ["docker", "image", "inspect"]:
                     if "org.opencontainers.image.revision" in command[-1]:
                         return "testcommit"
-                    return "v0.1.0-alpha.19"
+                    return "v0.1.0-alpha.20"
                 if command[:3] == ["git", "-C", str(ROOT)]:
                     return "testcommit"
                 if command[:2] == ["docker", "ps"]:
@@ -494,7 +494,7 @@ class AdminHelperTests(unittest.TestCase):
                 if command[:3] == ["docker", "image", "inspect"]:
                     if "org.opencontainers.image.revision" in command[-1]:
                         return "testcommit"
-                    return "v0.1.0-alpha.19"
+                    return "v0.1.0-alpha.20"
                 if command[:3] == ["git", "-C", str(ROOT)]:
                     return "testcommit"
                 if command[:2] == ["docker", "ps"]:
@@ -602,7 +602,7 @@ class AdminHelperTests(unittest.TestCase):
                 if command[:3] == ["docker", "image", "inspect"]:
                     if "org.opencontainers.image.revision" in command[-1]:
                         return "testcommit"
-                    return "v0.1.0-alpha.19"
+                    return "v0.1.0-alpha.20"
                 if command[:3] == ["git", "-C", str(ROOT)]:
                     return "testcommit"
                 if command[:2] == ["docker", "ps"]:
@@ -696,7 +696,7 @@ class AdminHelperTests(unittest.TestCase):
                         "pids_limit": 512,
                     },
                     "image": {
-                        "aidee_version": "v0.1.0-alpha.19",
+                        "aidee_version": "v0.1.0-alpha.20",
                         "image_id": "sha256:" + "a" * 64,
                     },
                 }
@@ -1026,7 +1026,7 @@ class AdminHelperTests(unittest.TestCase):
                     if command[:3] == ["docker", "image", "inspect"]:
                         if "org.opencontainers.image.revision" in command[-1]:
                             return "testcommit"
-                        return "v0.1.0-alpha.19"
+                        return "v0.1.0-alpha.20"
                     if command[:3] == ["git", "-C", str(ROOT)]:
                         return "testcommit"
                     if command[:2] == ["docker", "ps"]:

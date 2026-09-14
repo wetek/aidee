@@ -56,4 +56,7 @@ checkouts under `/opt/data/aidee/repos`.
 `v0.1.0-alpha.19` offers Aidee updates from Telegram with Start update and
 Apply now. An unanswered cron notice never applies.
 
+`v0.1.0-alpha.20` relocates leftover clones when the canonical repo name is a
+dangling symlink or file.
+
 

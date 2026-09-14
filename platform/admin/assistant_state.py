@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Shared desired-state generation for assistant creation and fleet repair."""
 
+import errno
 import json
 import os
 import sys
@@ -321,18 +322,30 @@ def _is_git_checkout(path):
     return path.is_dir() and not path.is_symlink() and (path / ".git").exists()
 
 
+def _lexists(path):
+    try:
+        path.lstat()
+        return True
+    except FileNotFoundError:
+        return False
+    except OSError as error:
+        if error.errno == errno.ENOTDIR:
+            return False
+        raise
+
+
 def _unique_directory(parent, name):
     candidate = parent / name
-    if not candidate.exists():
+    if not _lexists(candidate):
         return candidate
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     candidate = parent / f"{name}.{stamp}"
-    if not candidate.exists():
+    if not _lexists(candidate):
         return candidate
     index = 2
     while True:
         candidate = parent / f"{name}.{stamp}.{index}"
-        if not candidate.exists():
+        if not _lexists(candidate):
             return candidate
         index += 1
 
@@ -385,10 +398,20 @@ def relocate_legacy_home_repos(runtime_dir, uid=None, gid=None):
         if source.is_symlink():
             raise RuntimeError(f"refusing to relocate symlink checkout: {source}")
         destination = repos / source.name
-        if destination.exists() or destination == source:
+        if destination == source:
+            continue
+        if _lexists(destination):
             legacy = runtime_dir / "aidee" / "legacy-home-repos"
             ensure_directory(legacy, uid=uid, gid=gid)
-            destination = _unique_directory(legacy, source.name)
+            occupant_is_checkout = (
+                not destination.is_symlink() and destination.is_dir()
+            )
+            if occupant_is_checkout:
+                destination = _unique_directory(legacy, source.name)
+            else:
+                aside = _unique_directory(legacy, source.name)
+                destination.rename(aside)
+                changed.append(str(aside))
         parent = source.parent
         source.rename(destination)
         _remove_empty_parents(parent, runtime_dir)
