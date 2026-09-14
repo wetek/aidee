@@ -1,11 +1,11 @@
 ---
 name: controller-onboarding
-description: Completes the Aidee controller's first-run Telegram branding and dashboard verification. Use before any project or assistant work when CONTROLLER_ONBOARDING.md exists and onboarding is incomplete.
+description: Completes the Aidee controller's first-run Telegram branding and dashboard verification. Use at the start of every user message, including greetings, until the onboarding gate returns silent or complete.
 ---
 
 # Controller onboarding
 
-Run the durable gate before operational work:
+On every user message, including greetings, run the durable gate before any other reply:
 
 ~~~bash
 /opt/aidee/source/platform/setup/onboarding-gate.py \

@@ -138,9 +138,14 @@ for skill_source in "${target}"/platform/shared-skills/*; do
   ln -sfn "${skill_source}" "${destination}"
 done
 
-plugin_source="${target}/platform/dashboard-plugins/aidee-fleet"
-plugin_destination="${HERMES_HOME}/plugins/aidee-fleet"
-if [[ -f "${plugin_source}/dashboard/manifest.json" ]]; then
+install_controller_plugin() {
+  local plugin_source="$1"
+  local plugin_destination="$2"
+  if [[ ! -f "${plugin_source}/plugin.yaml" &&
+    ! -f "${plugin_source}/dashboard/manifest.json" ]]
+  then
+    return 0
+  fi
   install -d -m 0750 "${HERMES_HOME}/plugins"
   if [[ -e "${plugin_destination}" && ! -L "${plugin_destination}" ]]; then
     legacy_plugin="${plugin_destination}.pre-versioned-sync"
@@ -160,6 +165,24 @@ if [[ -f "${plugin_source}/dashboard/manifest.json" ]]; then
     fi
   fi
   ln -sfn "${plugin_source}" "${plugin_destination}"
+}
+
+install_controller_plugin \
+  "${target}/platform/dashboard-plugins/aidee-fleet" \
+  "${HERMES_HOME}/plugins/aidee-fleet"
+install_controller_plugin \
+  "${target}/platform/hermes-plugins/aidee-onboarding" \
+  "${HERMES_HOME}/plugins/aidee-onboarding"
+
+hermes_binary="${HOME}/.local/bin/hermes"
+if [[ -x "${hermes_binary}" ]]; then
+  # The positional arguments expand inside the child shell.
+  # shellcheck disable=SC2016
+  env HERMES_HOME="${HERMES_HOME}" \
+    bash -c 'printf "n\n" | "$1" plugins enable "$2"' \
+    aidee-enable-onboarding \
+    "${hermes_binary}" \
+    aidee-onboarding
 fi
 
 ln -sfn "releases/${release}" "${upstream_dir}/current"

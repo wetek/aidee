@@ -6,8 +6,10 @@ Status: accepted
 
 Use Tailscale Serve as the default automated phone-access adapter. Offer a temporary SSH tunnel and show Cloudflare as a planned custom-domain option.
 
-Before operational work, require the controller to run the durable onboarding
-gate. The gate makes one resume offer when a required step is incomplete.
+On every user message, including greetings, require the controller to run the
+durable onboarding gate. A Hermes `pre_llm_call` plugin injects that offer
+when required steps are still incomplete. The gate makes one resume offer
+when a required step is incomplete.
 `Not now` records that the owner was prompted and suppresses repeat offers until
 manual reopen or a later schema adds a required step. It does not create a
 time-based reminder.

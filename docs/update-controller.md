@@ -1,8 +1,8 @@
 # Update an existing Aidee controller
 
-These instructions are for an existing Aidee VPS. Alpha 14 refreshes managed
-Hermes prompts after controller or assistant runtime instructions change. Run
-the fleet update from the owner's SSH terminal with sudo.
+These instructions are for an existing Aidee VPS. Alpha 16 injects the
+onboarding resume offer on every turn when required setup is still
+incomplete. Run the fleet update from the owner's SSH terminal with sudo.
 
 ## Rules
 
@@ -22,23 +22,23 @@ the fleet update from the owner's SSH terminal with sudo.
 
 ### One-time bootstrap from Alpha 12 or older
 
-Older releases do not contain the fleet updater. Fetch the exact Alpha 15 tag
+Older releases do not contain the fleet updater. Fetch the exact Alpha 16 tag
 and preview it:
 
 ~~~bash
 sudo install -d -m 0755 /opt/aidee/releases
-sudo git clone --branch v0.1.0-alpha.15 --depth 1 \
+sudo git clone --branch v0.1.0-alpha.16 --depth 1 \
   https://github.com/wetek/aidee.git \
-  /opt/aidee/releases/v0.1.0-alpha.15
-sudo /opt/aidee/releases/v0.1.0-alpha.15/platform/scripts/update-host.sh \
-  --release v0.1.0-alpha.15 --preview
+  /opt/aidee/releases/v0.1.0-alpha.16
+sudo /opt/aidee/releases/v0.1.0-alpha.16/platform/scripts/update-host.sh \
+  --release v0.1.0-alpha.16 --preview
 ~~~
 
 After reviewing the preview and explicitly approving it, run:
 
 ~~~bash
-sudo /opt/aidee/releases/v0.1.0-alpha.15/platform/scripts/update-host.sh \
-  --release v0.1.0-alpha.15 --apply --approved
+sudo /opt/aidee/releases/v0.1.0-alpha.16/platform/scripts/update-host.sh \
+  --release v0.1.0-alpha.16 --apply --approved
 ~~~
 
 ### Future updates
@@ -74,6 +74,16 @@ sudo /opt/aidee/source/platform/setup/onboarding-gate.py \
   --status-file /var/lib/aidee/fleet/controller/CONTROLLER_ONBOARDING_STATUS.json \
   --role controller --mode inspect
 ~~~
+
+Inspect one assistant from the host. Replace `control-tower` and `coding` as needed:
+
+~~~bash
+sudo python3 /opt/aidee/source/platform/setup/onboarding-gate.py \
+  --status-file /var/lib/aidee/runtime/assistants/control-tower/data/aidee/onboarding-status.json \
+  --role assistant --assistant-kind coding --mode inspect
+~~~
+
+The same file is `/opt/data/aidee/onboarding-status.json` inside the assistant container.
 
 Inspect controller and fleet rollups with one report:
 

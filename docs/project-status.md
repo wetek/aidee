@@ -1,7 +1,7 @@
 # Aidee project status
 
 Status: first VPS pilot in progress
-Release: `v0.1.0-alpha.15`
+Release: `v0.1.0-alpha.16`
 
 ## Goal
 
@@ -18,7 +18,8 @@ Prove that an owner can use the Aidee setup guide to install a private fleet of 
 - Optional Tailscale installation and phone-access guide.
 - Validated non-secret setup plans.
 - Resumable host and controller setup through `setup.sh`.
-- Durable controller and assistant onboarding with one-time resume decisions.
+- Durable controller and assistant onboarding with one-time resume decisions
+  and a Hermes plugin that injects the offer before a greeting.
 - Approved Telegram profile and avatar updates through the Bot API.
 - Telegram owner and phone dashboard completion markers.
 - Evidence-gated completed or owner-confirmed skipped step states.

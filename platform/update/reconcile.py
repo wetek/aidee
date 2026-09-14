@@ -858,6 +858,11 @@ def verify(
                     failures.append(
                         f"onboarding registry rollup mismatch: {assistant_id}"
                     )
+                enabled = (runtime_config.get("plugins") or {}).get("enabled") or []
+                if "aidee-onboarding" not in enabled:
+                    failures.append(
+                        f"onboarding plugin is not enabled: {assistant_id}"
+                    )
             except json.JSONDecodeError:
                 failures.append(f"onboarding status invalid: {assistant_id}")
         tools = runner.run(
@@ -873,6 +878,19 @@ def verify(
         )
         if tools.returncode:
             failures.append(f"onboarding tools missing: {assistant_id}")
+        plugin = runner.run(
+            [
+                "docker",
+                "exec",
+                name,
+                "test",
+                "-f",
+                "/opt/hermes/plugins/aidee-onboarding/plugin.yaml",
+            ],
+            check=False,
+        )
+        if plugin.returncode:
+            failures.append(f"onboarding plugin missing: {assistant_id}")
         fleet_dir = safe_state_path(
             state_root / "fleet",
             assistant.get("state_path") or f"assistants/{assistant_id}",
@@ -903,7 +921,7 @@ def action_plan(registry, release):
         f"build and validate the assistant image from exact release {release}",
         "apply pending versioned migrations with backups",
         f"activate exact host release {release}",
-        "refresh root-owned services and dashboard plugin",
+        "refresh root-owned services and Hermes plugins",
         "update the pinned controller Hermes runtime if needed",
         "refresh controller skills and controller-only default crons",
     ]
@@ -994,6 +1012,7 @@ def main():
     activate_release(candidate, arguments.release, arguments.code_root)
     source = arguments.code_root / "source"
     runner.run([str(source / "platform/scripts/install-admin-helper.sh")])
+    runner.run([str(source / "platform/scripts/install-dashboard-plugins.sh")])
     runner.run(
         [
             str(source / "platform/scripts/update-controller-runtime.sh"),

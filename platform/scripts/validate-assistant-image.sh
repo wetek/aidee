@@ -141,6 +141,8 @@ for entry in "a:${container_a}" "b:${container_b}"; do
 done
 
 docker exec --user 10000:10000 "${container_a}" \
+  test -f /opt/hermes/plugins/aidee-onboarding/plugin.yaml
+docker exec --user 10000:10000 "${container_a}" \
   /opt/aidee/onboarding/onboarding-gate.py \
   --status-file /opt/data/aidee/onboarding-status.json \
   --role assistant \

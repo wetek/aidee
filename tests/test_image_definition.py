@@ -27,6 +27,8 @@ class ImageDefinitionTests(unittest.TestCase):
         self.assertIn("io.aidee.hermes.commit", dockerfile)
         self.assertIn("io.aidee.hermes.patch-sha256", dockerfile)
         self.assertIn("apply-hermes-runtime-patch.sh /opt/hermes", dockerfile)
+        self.assertIn("hermes-plugins/aidee-onboarding", dockerfile)
+        self.assertIn("/opt/hermes/plugins/aidee-onboarding", dockerfile)
         self.assertIn("HEALTHCHECK", dockerfile)
 
     def test_hermes_patch_is_pinned_and_fail_closed(self):

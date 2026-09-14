@@ -23,10 +23,10 @@ class AdminHelperTests(unittest.TestCase):
         image_id = "sha256:" + "a" * 64
         image_dir = state_root / "runtime" / "images"
         image_dir.mkdir(parents=True)
-        (image_dir / "v0.1.0-alpha.15.json").write_text(
+        (image_dir / "v0.1.0-alpha.16.json").write_text(
             json.dumps(
                 {
-                    "aidee_version": "v0.1.0-alpha.15",
+                    "aidee_version": "v0.1.0-alpha.16",
                     "image_id": image_id,
                     "source_commit": "testcommit",
                     "validation": "validated",
@@ -73,7 +73,7 @@ class AdminHelperTests(unittest.TestCase):
                 if command[:3] == ["docker", "image", "inspect"]:
                     if "org.opencontainers.image.revision" in command[-1]:
                         return "testcommit"
-                    return "v0.1.0-alpha.15"
+                    return "v0.1.0-alpha.16"
                 if command[:3] == ["git", "-C", str(ROOT)]:
                     return "testcommit"
                 if command[:2] == ["docker", "ps"]:
@@ -249,6 +249,7 @@ class AdminHelperTests(unittest.TestCase):
             self.assertEqual(soul_text, fleet_soul.read_text())
             self.assertIn("# Personal", soul_text)
             self.assertIn("Communication standards", soul_text)
+            self.assertIn("including greetings", soul_text)
             self.assertIn("120 words or fewer", soul_text)
             self.assertIn("On Telegram, present choices", soul_text)
             self.assertIn("interactive clarify tool with clickable options", soul_text)
@@ -304,7 +305,7 @@ class AdminHelperTests(unittest.TestCase):
                 if command[:3] == ["docker", "image", "inspect"]:
                     if "org.opencontainers.image.revision" in command[-1]:
                         return "testcommit"
-                    return "v0.1.0-alpha.15"
+                    return "v0.1.0-alpha.16"
                 if command[:3] == ["git", "-C", str(ROOT)]:
                     return "testcommit"
                 if command[:2] == ["docker", "ps"]:
@@ -404,7 +405,7 @@ class AdminHelperTests(unittest.TestCase):
                 if command[:3] == ["docker", "image", "inspect"]:
                     if "org.opencontainers.image.revision" in command[-1]:
                         return "testcommit"
-                    return "v0.1.0-alpha.15"
+                    return "v0.1.0-alpha.16"
                 if command[:3] == ["git", "-C", str(ROOT)]:
                     return "testcommit"
                 if command[:2] == ["docker", "ps"]:
@@ -493,7 +494,7 @@ class AdminHelperTests(unittest.TestCase):
                 if command[:3] == ["docker", "image", "inspect"]:
                     if "org.opencontainers.image.revision" in command[-1]:
                         return "testcommit"
-                    return "v0.1.0-alpha.15"
+                    return "v0.1.0-alpha.16"
                 if command[:3] == ["git", "-C", str(ROOT)]:
                     return "testcommit"
                 if command[:2] == ["docker", "ps"]:
@@ -560,6 +561,10 @@ class AdminHelperTests(unittest.TestCase):
             config_data = yaml.safe_load((runtime_dir / "config.yaml").read_text())
             telegram_cfg = config_data.get("platforms", {}).get("telegram", {})
             self.assertTrue(telegram_cfg.get("enabled"))
+            self.assertIn(
+                "aidee-onboarding",
+                config_data.get("plugins", {}).get("enabled", []),
+            )
             self.assertEqual(
                 telegram_cfg.get("home_channel"),
                 {
@@ -591,7 +596,7 @@ class AdminHelperTests(unittest.TestCase):
                 if command[:3] == ["docker", "image", "inspect"]:
                     if "org.opencontainers.image.revision" in command[-1]:
                         return "testcommit"
-                    return "v0.1.0-alpha.15"
+                    return "v0.1.0-alpha.16"
                 if command[:3] == ["git", "-C", str(ROOT)]:
                     return "testcommit"
                 if command[:2] == ["docker", "ps"]:
@@ -644,6 +649,10 @@ class AdminHelperTests(unittest.TestCase):
             config_data = yaml.safe_load((runtime_dir / "config.yaml").read_text())
             telegram_cfg = config_data.get("platforms", {}).get("telegram", {})
             self.assertTrue(telegram_cfg.get("enabled"))
+            self.assertIn(
+                "aidee-onboarding",
+                config_data.get("plugins", {}).get("enabled", []),
+            )
             self.assertEqual(
                 telegram_cfg.get("home_channel"),
                 {
@@ -935,7 +944,7 @@ class AdminHelperTests(unittest.TestCase):
                     if command[:3] == ["docker", "image", "inspect"]:
                         if "org.opencontainers.image.revision" in command[-1]:
                             return "testcommit"
-                        return "v0.1.0-alpha.15"
+                        return "v0.1.0-alpha.16"
                     if command[:3] == ["git", "-C", str(ROOT)]:
                         return "testcommit"
                     if command[:2] == ["docker", "ps"]:

@@ -43,4 +43,7 @@ locked, resumable controller and assistant onboarding.
 `v0.1.0-alpha.15` installs the onboarding state module with the administration
 helper so existing hosts can finish an Alpha 14 apply.
 
+`v0.1.0-alpha.16` injects the onboarding resume offer on every turn when
+required setup is still incomplete.
+
 

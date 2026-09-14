@@ -33,12 +33,21 @@ class ControllerSyncTests(unittest.TestCase):
             / "dashboard"
             / "manifest.json"
         )
+        onboarding_plugin = (
+            repository
+            / "platform"
+            / "hermes-plugins"
+            / "aidee-onboarding"
+            / "plugin.yaml"
+        )
         release_notes.parent.mkdir(parents=True)
         skill.parent.mkdir(parents=True)
         plugin_manifest.parent.mkdir(parents=True)
+        onboarding_plugin.parent.mkdir(parents=True)
         release_notes.write_text("# Test release\n")
         skill.write_text("---\nname: example\ndescription: Test skill\n---\n")
         plugin_manifest.write_text("{}\n")
+        onboarding_plugin.write_text("name: aidee-onboarding\n")
 
         commands = [
             ["git", "init", "-b", "main", str(repository)],
@@ -118,6 +127,9 @@ class ControllerSyncTests(unittest.TestCase):
             )
             self.assertTrue(
                 (hermes_home / "plugins/aidee-fleet").is_symlink()
+            )
+            self.assertTrue(
+                (hermes_home / "plugins/aidee-onboarding").is_symlink()
             )
             self.assertEqual(
                 (

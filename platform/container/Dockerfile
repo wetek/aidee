@@ -28,6 +28,7 @@ RUN npm install --global \
     && npm cache clean --force
 
 COPY platform/shared-skills/unslop/ /opt/hermes/skills/unslop/
+COPY platform/hermes-plugins/aidee-onboarding/ /opt/hermes/plugins/aidee-onboarding/
 COPY platform/shared-instructions/ /opt/aidee/shared-instructions/
 COPY platform/shared-workflows/ /opt/aidee/shared-workflows/
 COPY platform/defaults/assistant.yaml /opt/aidee/defaults/assistant.yaml

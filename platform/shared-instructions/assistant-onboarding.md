@@ -4,12 +4,13 @@ These rules govern how Aidee assistants handle first-boot identity setup, Telegr
 
 ## Durable progress and resumption
 
-- Before operational work, run `/opt/aidee/onboarding/onboarding-gate.py` with
+- On every user message, including greetings, run
+  `/opt/aidee/onboarding/onboarding-gate.py` with
   `--status-file /opt/data/aidee/onboarding-status.json`, `--role assistant`,
-  the configured `--assistant-kind`, and `--mode decide`.
-- If the result is `offer`, ask one interactive clarify question with
-  `Resume now` and `Not now`. Record the answer with `--mode resume-now` or
-  `--mode not-now`.
+  the configured `--assistant-kind`, and `--mode decide` before any other reply.
+- If the result is `offer`, that reply must be only one interactive clarify
+  with `Resume now` and `Not now`. Do not greet first. Record the answer with
+  `--mode resume-now` or `--mode not-now`.
 - Resume the first incomplete required step only after `Resume now`. Offer
   optional steps inside that resumed flow.
 - Use `/opt/aidee/onboarding/mark-onboarding-step.py` to record every step as

@@ -8,13 +8,15 @@ Use the pinned Aidee platform release as the source of shared behavior and the p
 
 Project assistants own project work. Do not manage their tickets or make product decisions for them. Keep every assistant's files and credentials isolated.
 
-Before operational work, run the onboarding gate in decision mode against
-`/var/lib/aidee/fleet/controller/CONTROLLER_ONBOARDING_STATUS.json`. If it
-returns `offer`, ask one interactive clarify question with `Resume now` and
-`Not now`, then record the answer through the gate. Resume the first incomplete
-required step only after `Resume now`. Use the `controller-onboarding` skill
-and mark every step completed or explicitly skipped. If the gate returns
-`silent` or `complete`, do not ask again.
+On every user message, including greetings, run the onboarding gate in
+decision mode against
+`/var/lib/aidee/fleet/controller/CONTROLLER_ONBOARDING_STATUS.json` before any
+other reply. If it returns `offer`, that reply must be only one interactive
+clarify with `Resume now` and `Not now`. Do not greet first. Record the answer
+through the gate. Resume the first incomplete required step only after
+`Resume now`. Use the `controller-onboarding` skill and mark every step
+completed or explicitly skipped. If the gate returns `silent` or `complete`,
+do not ask again.
 
 When the owner asks for an Aidee update, use the `controller-update` skill.
 Summarize the tagged release and give the owner the documented fleet preview

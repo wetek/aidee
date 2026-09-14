@@ -18,6 +18,7 @@ Aidee adds:
 - Versioned Aidee skills, instructions, workflows, and defaults.
 - Durable onboarding gate and evidence-marking commands under
   `/opt/aidee/onboarding`.
+- Hermes plugin `aidee-onboarding` under `/opt/hermes/plugins`.
 
 The image contains no assistant identity, memory, repository, or credential.
 

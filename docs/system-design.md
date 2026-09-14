@@ -46,8 +46,9 @@ Every assistant on one Aidee release uses the same immutable image ID. Docker st
 
 The image derives from a pinned official Hermes image. Alpha 14 applies one
 checksum-verified temporary Hermes runtime-context patch to the exact pinned
-source. It adds GitHub CLI, jq, OpenCode, socat, and Aidee shared skills. It
-contains no identity, memory, project repository, or credential.
+source. It adds GitHub CLI, jq, OpenCode, socat, Aidee shared skills, and the
+onboarding plugin. It contains no identity, memory, project repository, or
+credential.
 
 The root-owned image record under `/etc/aidee/images` is authoritative. Controller-written requests choose an Aidee version, not a Docker image or build argument.
 

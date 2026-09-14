@@ -177,10 +177,14 @@ class OnboardingStatusTests(unittest.TestCase):
             path = Path(tmp) / "status.json"
             onboarding_state.gate(path, "controller", action="decide", now=NOW)
             onboarding_state.gate(path, "controller", action="not_now", now=NOW)
-            onboarding_state.gate(path, "controller", action="reopen", now=NOW)
+            reopened = onboarding_state.gate(
+                path, "controller", action="reopen", now=NOW
+            )
             result = onboarding_state.gate(
                 path, "controller", action="decide", now=NOW
             )
+            self.assertEqual(reopened["decision"], "offer")
+            self.assertIsNone(reopened["prompt"]["last_prompted_at"])
             self.assertEqual(result["decision"], "offer")
 
     def test_new_required_step_changes_prompt_fingerprint(self):
@@ -429,6 +433,11 @@ class OnboardingStatusTests(unittest.TestCase):
                 root / "fleet/controller/CONTROLLER_ONBOARDING_STATUS.json"
             )
             expected.parent.mkdir(parents=True)
+            assistant_host = (
+                root
+                / "runtime/assistants/control-tower/data/aidee/onboarding-status.json"
+            )
+            assistant_host.parent.mkdir(parents=True)
             with mock.patch.dict(os.environ, {"AIDEE_STATE_DIR": str(root)}):
                 self.assertEqual(
                     onboarding_state.validate_status_path(expected, "controller"),
@@ -439,6 +448,31 @@ class OnboardingStatusTests(unittest.TestCase):
                 ):
                     onboarding_state.validate_status_path(
                         root / "other.json", "controller"
+                    )
+                self.assertEqual(
+                    onboarding_state.validate_status_path(
+                        assistant_host, "assistant"
+                    ),
+                    assistant_host,
+                )
+                self.assertEqual(
+                    onboarding_state.validate_status_path(
+                        onboarding_state.ASSISTANT_STATUS_PATH, "assistant"
+                    ),
+                    onboarding_state.ASSISTANT_STATUS_PATH,
+                )
+                with self.assertRaisesRegex(
+                    onboarding_state.OnboardingError, "approved"
+                ):
+                    onboarding_state.validate_status_path(
+                        root / "runtime/assistants/../etc/passwd", "assistant"
+                    )
+                with self.assertRaisesRegex(
+                    onboarding_state.OnboardingError, "approved"
+                ):
+                    onboarding_state.validate_status_path(
+                        root / "runtime/assistants/bad_id/data/aidee/onboarding-status.json",
+                        "assistant",
                     )
 
     def test_marker_cli_rejects_untrusted_reconciler_evidence(self):

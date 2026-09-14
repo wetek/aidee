@@ -310,6 +310,10 @@ class FleetUpdateTests(unittest.TestCase):
             repaired_config = yaml.safe_load(config.read_text())
             self.assertEqual(repaired_config["model"], "owner-selected")
             self.assertEqual(repaired_config["display"]["skin"], "pilot")
+            self.assertIn(
+                "aidee-onboarding",
+                repaired_config["plugins"]["enabled"],
+            )
             self.assertEqual(env.read_text(), "TOKEN=preserved\n")
             self.assertTrue((runtime / "aidee/repos").is_dir())
             self.assertEqual((runtime / "aidee/repos").stat().st_mode & 0o777, 0o770)
@@ -336,6 +340,7 @@ class FleetUpdateTests(unittest.TestCase):
                 "/opt/data/aidee/repos",
                 "Software engineering standards",
                 "first incomplete",
+                "including greetings",
             ):
                 self.assertIn(expected, soul)
 

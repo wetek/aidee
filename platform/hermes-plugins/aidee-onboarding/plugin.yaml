@@ -1,0 +1,3 @@
+name: aidee-onboarding
+description: Injects the Aidee onboarding resume offer before the model answers.
+version: 0.1.0

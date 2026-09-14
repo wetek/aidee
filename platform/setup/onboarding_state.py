@@ -23,6 +23,15 @@ CONTROLLER_STATUS_RELATIVE = Path(
     "fleet/controller/CONTROLLER_ONBOARDING_STATUS.json"
 )
 ASSISTANT_STATUS_PATH = Path("/opt/data/aidee/onboarding-status.json")
+ASSISTANT_ID = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
+ASSISTANT_HOST_STATUS_PARTS = (
+    "runtime",
+    "assistants",
+    None,
+    "data",
+    "aidee",
+    "onboarding-status.json",
+)
 MAX_NOTE_LENGTH = 500
 MAX_EVIDENCE_ITEMS = 8
 MAX_EVIDENCE_DETAIL_LENGTH = 500
@@ -82,25 +91,54 @@ def utc_now():
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
+def _assistant_host_status_root(path, state_root):
+    try:
+        relative = Path(os.path.normpath(path)).relative_to(
+            Path(os.path.normpath(state_root))
+        )
+    except ValueError:
+        return None
+    parts = relative.parts
+    expected = ASSISTANT_HOST_STATUS_PARTS
+    if len(parts) != len(expected):
+        return None
+    for index, part in enumerate(parts):
+        if expected[index] is None:
+            if not ASSISTANT_ID.fullmatch(part):
+                return None
+            continue
+        if part != expected[index]:
+            return None
+    return Path(os.path.normpath(state_root))
+
+
 def validate_status_path(path, role):
     """Restrict command-line state writes to the configured Aidee state file."""
     path = Path(path)
+    if not path.is_absolute():
+        raise OnboardingError("onboarding status path must be absolute")
     if role == "controller":
         state_root = Path(os.environ.get("AIDEE_STATE_DIR", "/var/lib/aidee"))
         expected = state_root / CONTROLLER_STATUS_RELATIVE
-    elif role == "assistant":
-        state_root = ASSISTANT_STATUS_PATH.parent
-        expected = ASSISTANT_STATUS_PATH
-    else:
-        raise OnboardingError(f"unsupported onboarding role: {role}")
-    if not path.is_absolute():
-        raise OnboardingError("onboarding status path must be absolute")
-    if os.path.normpath(path) != os.path.normpath(expected):
+        if os.path.normpath(path) != os.path.normpath(expected):
+            raise OnboardingError(
+                f"onboarding status path is outside the approved {role} state root"
+            )
+        _reject_symlink_components(path, state_root)
+        return path
+    if role == "assistant":
+        if os.path.normpath(path) == os.path.normpath(ASSISTANT_STATUS_PATH):
+            _reject_symlink_components(path, ASSISTANT_STATUS_PATH.parent)
+            return path
+        state_root = Path(os.environ.get("AIDEE_STATE_DIR", "/var/lib/aidee"))
+        host_root = _assistant_host_status_root(path, state_root)
+        if host_root is not None:
+            _reject_symlink_components(path, host_root)
+            return path
         raise OnboardingError(
             f"onboarding status path is outside the approved {role} state root"
         )
-    _reject_symlink_components(path, state_root)
-    return path
+    raise OnboardingError(f"unsupported onboarding role: {role}")
 
 
 def _reject_symlink_components(path, root=None):
@@ -586,7 +624,7 @@ def gate(path, role, assistant_kind=None, config=None, action="decide", now=None
         if state["rollup"]["complete"]:
             decision = "complete"
         elif (
-            action in {"inspect", "decide"}
+            action in {"inspect", "decide", "reopen"}
             and incomplete_required
             and (
                 prompt.get("last_prompted_at") is None

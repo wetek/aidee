@@ -41,6 +41,7 @@ from onboarding_state import (
 CONTAINER_UID = 10000
 CONTAINER_REPOS_ROOT = "/opt/data/aidee/repos"
 ONBOARDING_RELATIVE_PATH = Path("aidee/onboarding-status.json")
+ONBOARDING_PLUGIN = "aidee-onboarding"
 COMPLETE_STEP_STATES = {"completed", "skipped"}
 STEP_STATES = COMPLETE_STEP_STATES | {"pending", "in_progress"}
 
@@ -62,11 +63,13 @@ def build_soul_document(assistant, owner):
         f"Store every coding-task repository under {CONTAINER_REPOS_ROOT}.",
         "",
         "## First-run onboarding",
-        "Before operational work, run `/opt/aidee/onboarding/onboarding-gate.py`",
+        "On every user message, including greetings, run",
+        "`/opt/aidee/onboarding/onboarding-gate.py`",
         f"with `--status-file /opt/data/{ONBOARDING_RELATIVE_PATH}`,",
-        f"`--role assistant --assistant-kind {kind} --mode decide`.",
-        "If it returns `offer`, use one interactive clarify with `Resume now` and",
-        "`Not now`. Record the answer with the gate. Resume the first incomplete",
+        f"`--role assistant --assistant-kind {kind} --mode decide`",
+        "before any other reply. If it returns `offer`, that reply must be only",
+        "one interactive clarify with `Resume now` and `Not now`. Do not greet",
+        "first. Record the answer with the gate. Resume the first incomplete",
         "required step only after `Resume now`, then resolve optional steps in the",
         "same flow. Use `/opt/aidee/onboarding/mark-onboarding-step.py` for every",
         "completed or explicitly skipped step. Never infer external completion.",
@@ -98,6 +101,24 @@ def build_soul_document(assistant, owner):
             ]
         )
     return "\n".join(sections) + "\n"
+
+
+def enable_onboarding_plugin(config):
+    """Add the onboarding plugin to plugins.enabled without dropping others."""
+    if not isinstance(config, dict):
+        raise RuntimeError("assistant config is not a mapping")
+    plugins = config.get("plugins")
+    if not isinstance(plugins, dict):
+        plugins = {}
+        config["plugins"] = plugins
+    enabled = plugins.get("enabled")
+    if not isinstance(enabled, list):
+        enabled = []
+        plugins["enabled"] = enabled
+    if ONBOARDING_PLUGIN not in enabled:
+        enabled.append(ONBOARDING_PLUGIN)
+        return True
+    return False
 
 
 def default_assistant_config(assistant):
@@ -210,8 +231,11 @@ def reconcile_dashboard_branding(assistant, runtime_dir, uid=None, gid=None):
     if not isinstance(display, dict):
         display = {}
         config["display"] = display
-    if display.get("skin") != assistant["id"]:
+    plugin_changed = enable_onboarding_plugin(config)
+    display_changed = display.get("skin") != assistant["id"]
+    if display_changed:
         display["skin"] = assistant["id"]
+    if display_changed or plugin_changed:
         atomic_write(
             config_path,
             yaml.safe_dump(config, sort_keys=False),
@@ -315,6 +339,7 @@ def reconcile_assistant_files(
             "dashboard": {"public_url": dashboard_url},
             "display": {"skin": assistant["id"]},
             "platforms": {"telegram": {"enabled": True}},
+            "plugins": {"enabled": [ONBOARDING_PLUGIN]},
         }
         atomic_write(
             runtime_config,

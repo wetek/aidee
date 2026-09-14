@@ -3,7 +3,8 @@ set -Eeuo pipefail
 
 AIDEE_CONTROLLER_USER="${AIDEE_CONTROLLER_USER:-aidee-controller}"
 source_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
-plugin_source="${source_root}/platform/dashboard-plugins/aidee-fleet"
+fleet_source="${source_root}/platform/dashboard-plugins/aidee-fleet"
+onboarding_source="${source_root}/platform/hermes-plugins/aidee-onboarding"
 
 fail() {
   echo "error: $*" >&2
@@ -16,15 +17,17 @@ fi
 if ! id "${AIDEE_CONTROLLER_USER}" >/dev/null 2>&1; then
   fail "Controller account does not exist: ${AIDEE_CONTROLLER_USER}"
 fi
-if [[ ! -f "${plugin_source}/dashboard/manifest.json" ]]; then
-  fail "Fleet dashboard plugin is missing: ${plugin_source}"
+if [[ ! -f "${fleet_source}/dashboard/manifest.json" ]]; then
+  fail "Fleet dashboard plugin is missing: ${fleet_source}"
+fi
+if [[ ! -f "${onboarding_source}/plugin.yaml" ]]; then
+  fail "Onboarding plugin is missing: ${onboarding_source}"
 fi
 
 controller_home="$(getent passwd "${AIDEE_CONTROLLER_USER}" | cut -d: -f6)"
 hermes_home="${HERMES_HOME:-${controller_home}/.hermes}"
 hermes_binary="${controller_home}/.local/bin/hermes"
 plugins_dir="${hermes_home}/plugins"
-destination="${plugins_dir}/aidee-fleet"
 
 install -d \
   -m 0750 \
@@ -32,26 +35,42 @@ install -d \
   -g "${AIDEE_CONTROLLER_USER}" \
   "${plugins_dir}"
 
-if [[ -L "${destination}" ]]; then
-  rm -f "${destination}"
-fi
-if [[ -e "${destination}" && ! -d "${destination}" ]]; then
-  fail "Refusing to replace unexpected plugin path: ${destination}"
-fi
+install_user_plugin() {
+  local plugin_source="$1"
+  local plugin_name="$2"
+  local destination="${plugins_dir}/${plugin_name}"
 
-rm -rf "${destination}"
-cp -a "${plugin_source}" "${destination}"
-chown -R "${AIDEE_CONTROLLER_USER}:${AIDEE_CONTROLLER_USER}" "${destination}"
-chmod -R a+rX "${destination}"
+  if [[ -L "${destination}" ]]; then
+    rm -f "${destination}"
+  fi
+  if [[ -e "${destination}" && ! -d "${destination}" ]]; then
+    fail "Refusing to replace unexpected plugin path: ${destination}"
+  fi
 
-if [[ -x "${hermes_binary}" ]]; then
-  # The positional argument expands inside the child shell.
+  rm -rf "${destination}"
+  cp -a "${plugin_source}" "${destination}"
+  chown -R "${AIDEE_CONTROLLER_USER}:${AIDEE_CONTROLLER_USER}" "${destination}"
+  chmod -R a+rX "${destination}"
+}
+
+enable_user_plugin() {
+  local plugin_name="$1"
+  if [[ ! -x "${hermes_binary}" ]]; then
+    return 0
+  fi
+  # The positional arguments expand inside the child shell.
   # shellcheck disable=SC2016
   runuser -u "${AIDEE_CONTROLLER_USER}" -- \
     env HOME="${controller_home}" HERMES_HOME="${hermes_home}" \
-    bash -c 'printf "n\n" | "$1" plugins enable aidee-fleet' \
-    aidee-enable-fleet \
-    "${hermes_binary}"
-fi
+    bash -c 'printf "n\n" | "$1" plugins enable "$2"' \
+    "aidee-enable-${plugin_name}" \
+    "${hermes_binary}" \
+    "${plugin_name}"
+}
 
-echo "Aidee Fleet dashboard plugin is installed."
+install_user_plugin "${fleet_source}" "aidee-fleet"
+install_user_plugin "${onboarding_source}" "aidee-onboarding"
+enable_user_plugin "aidee-fleet"
+enable_user_plugin "aidee-onboarding"
+
+echo "Aidee Hermes plugins are installed."

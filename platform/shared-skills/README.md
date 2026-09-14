@@ -4,7 +4,7 @@ Reusable Hermes skills that every assistant may receive.
 
 `unslop/SKILL.md` applies to the public setup interview and generated assistant responses. Ordinary chatbots can read it as instructions even when they do not support installable skills.
 
-`controller-onboarding/SKILL.md` runs in the controller's first authorized conversation. It verifies owner access, records the owner's Telegram branding choice, and confirms phone dashboard access.
+`controller-onboarding/SKILL.md` runs at the start of every controller conversation until the onboarding gate returns silent or complete. It verifies owner access, records the owner's Telegram branding choice, and confirms phone dashboard access.
 
 `controller-update/SKILL.md` previews and applies owner-approved Aidee knowledge updates without root access.
 

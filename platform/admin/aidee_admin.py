@@ -18,6 +18,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from assistant_state import (
     CONTAINER_UID,
+    ONBOARDING_PLUGIN,
     build_soul_document,
     default_assistant_config,
     default_onboarding_status,
@@ -375,6 +376,7 @@ def create_assistant_state(assistant, image_id, dashboard_url):
                 "enabled": True,
             }
         },
+        "plugins": {"enabled": [ONBOARDING_PLUGIN]},
     }
     home_channel = controller_telegram_home_channel()
     if home_channel:
