@@ -3,6 +3,7 @@ import importlib.util
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -1157,6 +1158,56 @@ class AdminHelperTests(unittest.TestCase):
                         f"Expected skill file missing: {skill_file}",
                     )
                     self.assertGreater(len(skill_file.read_text()), 0)
+
+    def test_installed_helper_imports_without_release_module(self):
+        installer = (ROOT / "platform/scripts/install-admin-helper.sh").read_text()
+        self.assertNotIn("release.py", installer)
+        self.assertNotIn("LATEST", installer)
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            install_dir = Path(temporary_directory) / "usr" / "local" / "lib" / "aidee"
+            install_dir.mkdir(parents=True)
+            shutil.copy(
+                ROOT / "platform/admin/aidee_admin.py",
+                install_dir / "aidee-admin",
+            )
+            shutil.copy(
+                ROOT / "platform/admin/assistant_state.py",
+                install_dir / "assistant_state.py",
+            )
+            shutil.copy(
+                ROOT / "platform/setup/onboarding_state.py",
+                install_dir / "onboarding_state.py",
+            )
+            self.assertFalse((install_dir / "release.py").exists())
+            self.assertFalse((Path(temporary_directory) / "LATEST").exists())
+
+            helper = install_dir / "aidee-admin"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    (
+                        "from pathlib import Path\n"
+                        f"path = Path({str(helper)!r})\n"
+                        "namespace = {'__name__': 'aidee_admin', '__file__': str(path)}\n"
+                        "exec(compile(path.read_text(), str(path), 'exec'), namespace)\n"
+                        "print('imported')\n"
+                    ),
+                ],
+                cwd=temporary_directory,
+                env={
+                    "PATH": os.environ.get("PATH", ""),
+                    "HOME": temporary_directory,
+                    "PYTHONPATH": "",
+                },
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("imported", result.stdout)
+            self.assertNotIn("ModuleNotFoundError", result.stderr)
+            self.assertNotIn("No module named 'release'", result.stderr)
 
     def test_installed_helper_imports_onboarding_from_install_dir(self):
         installer = (ROOT / "platform/scripts/install-admin-helper.sh").read_text()

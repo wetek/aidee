@@ -16,8 +16,6 @@ import jsonschema
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from release import pin_schema  # noqa: E402
 from assistant_state import (
     CONTAINER_UID,
     ONBOARDING_PLUGIN,
@@ -79,9 +77,7 @@ def load_json(path):
 
 
 def validate_request(request):
-    schema = pin_schema(
-        load_json(SOURCE_ROOT / "platform/schemas/assistant-request.schema.json")
-    )
+    schema = load_json(SOURCE_ROOT / "platform/schemas/assistant-request.schema.json")
     try:
         jsonschema.validate(request, schema)
     except jsonschema.ValidationError as error:

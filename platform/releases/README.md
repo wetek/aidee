@@ -64,5 +64,7 @@ dangling symlink or file.
 `v0.1.0-alpha.22` puts Start update and Not now on the daily Telegram
 notice as tap-to-send buttons, and reads the current tag from `LATEST`.
 
+`v0.1.0-alpha.23` stops the installed helper from importing `release` at listen time.
+
 
 
