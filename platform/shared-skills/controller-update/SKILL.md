@@ -11,9 +11,8 @@ Keep each response under 120 words unless preview or apply output needs more.
 
 ## Notice
 
-When a newer tag exists, send one Telegram notice, then one clarify.
-Do not run sudo on that first message. Do not apply from an unanswered
-cron run.
+When a newer tag exists, compose one Telegram notice. Do not run sudo on
+that first message. Do not apply from an unanswered cron run.
 
 Shape:
 
@@ -29,10 +28,15 @@ Preview first. Apply updates the host, controller, image, and assistants
 and can take several minutes.
 ~~~
 
-Then send one Telegram clarify whose only options are:
+Never write Options or numbered choices in the notice body.
 
-1. Start update (recommended)
-2. Not now
+On a cron run, Telegram clarify is unavailable. Pipe the notice to
+`/opt/aidee/source/platform/controller-tools/send-telegram-choices.py`
+with `--choice "Start update"` and `--choice "Not now"`, then respond
+with `[SILENT]`.
+
+In an interactive Telegram chat, send that same notice with the
+interactive clarify tool. The only labels are Start update and Not now.
 
 Do not put SSH commands in the notice.
 
@@ -45,10 +49,8 @@ sudo /opt/aidee/source/platform/scripts/update-host.sh --release TAG --preview
 ~~~
 
 Summarize the planned actions in short bullets. Then send one Telegram
-clarify whose only options are:
-
-1. Apply now (recommended)
-2. Cancel
+clarify whose only labels are Apply now and Cancel. Do not write those
+labels in the message body.
 
 Tell the owner that apply can take several minutes.
 
@@ -61,12 +63,12 @@ sudo /opt/aidee/source/platform/scripts/update-host.sh --release TAG --apply --a
 ~~~
 
 Wait until it finishes. Do not start a second apply. `--approved` is valid
-only after the owner tapped Apply now in this chat.
+only after the owner chose Apply now in this chat.
 
 Report host, controller, cron, image, and assistant results. Name any
 rollback or incomplete onboarding step.
 
 ## Fallback
 
-If Telegram clarify is unavailable, give the SSH preview and apply commands
+If Telegram buttons are unavailable, give the SSH preview and apply commands
 from `docs/update-controller.md` and wait.

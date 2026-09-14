@@ -304,7 +304,9 @@
           "pattern": "^[^\\r\\n]+$"
         },
         "image_version": {
-          "const": "v0.1.0-alpha.21"
+          "$comment": "Validation pins const to the tag in LATEST.",
+          "type": "string",
+          "pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+-alpha\\.[0-9]+$"
         },
         "model_provider": {
           "type": "string",

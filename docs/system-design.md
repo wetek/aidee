@@ -149,9 +149,10 @@ a recorded reason. Atomic file replacement under `fcntl` locking prevents two
 concurrent Telegram turns from both producing an offer.
 
 The daily update job stays silent when no update exists. When a newer release
-exists, it sends a Telegram notice with Start update. It does not apply until
-the owner confirms in Telegram. After Start update it runs preview, then apply
-after Apply now.
+exists, it sends a Telegram notice with Start update and Not now as tap-to-send
+buttons. Cron cannot use the clarify tool, so the notice is sent with
+`send-telegram-choices.py`. It does not apply until the owner confirms in
+Telegram. After Start update it runs preview, then apply after Apply now.
 
 ## Assistant provisioning
 

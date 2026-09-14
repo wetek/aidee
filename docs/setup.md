@@ -94,13 +94,13 @@ Missing swap is a warning, not a setup blocker. Do not create swap automatically
 
 - Which dashboard access method do they want?
   1. Tailscale private HTTPS address (recommended and automated).
-  2. Cloudflare custom subdomain (planned, not automated in Alpha 21).
+  2. Cloudflare custom subdomain (planned, not automated in this release).
   3. Temporary SSH tunnel.
   4. Another method.
 - Do they want the verified dashboard URL as the Telegram bot menu button?
 - Does the provider firewall currently expose SSH to the whole internet?
 
-A domain is optional. Keep the dashboard bound to server loopback. Use Tailscale for routine private phone access or an SSH tunnel for temporary desktop access. If the owner selects Cloudflare, stop before generating the Alpha 21 plan and explain that its adapter is not implemented yet. They may still record a custom HTTPS origin later. The controller writes that origin to the fleet registry and the assistant `config.yaml`. Telegram menu buttons must copy that URL.
+A domain is optional. Keep the dashboard bound to server loopback. Use Tailscale for routine private phone access or an SSH tunnel for temporary desktop access. If the owner selects Cloudflare, stop before generating the setup plan and explain that its adapter is not implemented yet. They may still record a custom HTTPS origin later. The controller writes that origin to the fleet registry and the assistant `config.yaml`. Telegram menu buttons must copy that URL.
 
 After the server is on the tailnet, the controller gives the owner the phone steps: install the Tailscale app, sign in with the same email used to approve the server, turn the VPN on, then open the dashboard from the Telegram bot menu. See `platform/docs/tailscale.md`.
 
@@ -148,7 +148,7 @@ tool result.
 
 Git backup is optional. Credentials, databases, logs, and tokens never enter Git, even when the repository is private.
 
-Recommend the daily update check. It stays silent when nothing changed. When a newer release exists, it sends a Telegram notice with Start update. It never applies until the owner taps that button, then Apply now.
+Recommend the daily update check. It stays silent when nothing changed. When a newer release exists, it sends a Telegram notice with Start update and Not now as tap-to-send buttons. It never applies until the owner sends Start update, then Apply now.
 
 ## Required plan
 
@@ -172,14 +172,16 @@ Ask the owner to approve this plan.
 
 Convert the approved answers into JSON that matches `platform/schemas/setup-plan.schema.json`. Show the JSON in the plan review.
 
+Read `https://raw.githubusercontent.com/wetek/aidee/main/LATEST`. Set `release` to that exact tag. Do not guess the current release.
+
 The plan may contain names, preferences, provider choices, repository URLs, and approval rules. It must not contain passwords, private keys, API keys, bot tokens, authorization URLs, or recovery codes.
 
-Use this shape:
+Use this shape. Replace `RELEASE` with the tag from `LATEST`.
 
 ~~~json
 {
   "schema_version": 1,
-  "release": "v0.1.0-alpha.21",
+  "release": "RELEASE",
   "owner": {
     "name": "Example Owner",
     "experience": "guided"
@@ -202,7 +204,7 @@ Use this shape:
     "assistants": [
       {
         "schema_version": 1,
-        "release": "v0.1.0-alpha.21",
+        "release": "RELEASE",
         "owner": {
           "name": "Example Owner",
           "experience": "guided"
@@ -225,7 +227,7 @@ Use this shape:
       }
       ~~~
 
-      Alpha 21 accepts:
+      This release accepts:
 
       - Experience: `beginner`, `guided`, or `advanced`.
       - Dashboard access: `tailscale` or `ssh_tunnel`.
@@ -234,18 +236,19 @@ Use this shape:
       - Private Git: `later` or `disabled`.
       - Daily update check: `true` or `false`.
 
-      Cloudflare and immediate private Git setup remain planned options. Do not place them in an Alpha 21 setup plan.
+      Cloudflare and immediate private Git setup remain planned options. Do not place them in this release's setup plan.
 
-      Alpha 21 offers Start update on Telegram. Set `daily_check` to `false` when Telegram is not selected.
+      This release offers Start update on Telegram. Set `daily_check` to `false` when Telegram is not selected.
 
       ## Bootstrap handoff
 
-      After the owner replies `approve`, replace `SETUP_PLAN_JSON` below with the approved JSON:
+      After the owner replies `approve`, replace `SETUP_PLAN_JSON` below with
+      the approved JSON, and replace `RELEASE` with the tag from `LATEST`:
 
       ~~~bash
       sudo apt-get update
       sudo apt-get install -y git
-      git clone --branch v0.1.0-alpha.21 --depth 1 https://github.com/wetek/aidee.git
+      git clone --branch RELEASE --depth 1 https://github.com/wetek/aidee.git
 cd aidee
 cat > setup-plan.json <<'AIDEE_PLAN'
 SETUP_PLAN_JSON
@@ -274,7 +277,7 @@ The owner pastes the whole block into an SSH terminal. Do not ask them to paste 
 12. Telegram bot branding offer.
 13. Telegram dashboard menu button.
 14. Phone dashboard verification.
-15. Optional controller-only daily update check that notices new releases on Telegram and applies only after the owner taps Start update, then Apply now.
+15. Optional controller-only daily update check that notices new releases on Telegram and applies only after the owner sends Start update, then Apply now.
 16. Non-secret Telegram handoff.
 
 The program stores progress under `/var/lib/aidee/setup`. It prints one next action when it pauses.

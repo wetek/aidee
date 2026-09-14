@@ -14,8 +14,10 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCAL_ONLY_DIRECTORIES = {".agents", ".cursor", ".git", ".venv"}
+sys.path.insert(0, str(ROOT / "platform"))
 sys.path.insert(0, str(ROOT / "platform/setup"))
 from onboarding_state import default_status  # noqa: E402
+from release import bind_latest, latest, pin_schema  # noqa: E402
 
 
 def load_json(path: Path):
@@ -36,11 +38,13 @@ def validate_schemas():
     assistant_schema = load_json(
         ROOT / "platform" / "schemas" / "assistant-config.schema.json"
     )
-    assistant_request_schema = load_json(
-        ROOT / "platform" / "schemas" / "assistant-request.schema.json"
+    assistant_request_schema = pin_schema(
+        load_json(
+            ROOT / "platform" / "schemas" / "assistant-request.schema.json"
+        )
     )
-    setup_plan_schema = load_json(
-        ROOT / "platform" / "schemas" / "setup-plan.schema.json"
+    setup_plan_schema = pin_schema(
+        load_json(ROOT / "platform" / "schemas" / "setup-plan.schema.json")
     )
     telegram_profile_schema = load_json(
         ROOT / "platform" / "schemas" / "telegram-profile.schema.json"
@@ -69,11 +73,11 @@ def validate_schemas():
             "{{ purpose }}": "Validate Aidee",
         },
     )
-    assistant_request = load_json(
-        ROOT / "fleet-template" / "assistant-request.json.example"
+    assistant_request = bind_latest(
+        load_json(ROOT / "fleet-template" / "assistant-request.json.example")
     )
-    setup_plan = load_json(
-        ROOT / "fleet-template" / "setup-plan.json.example"
+    setup_plan = bind_latest(
+        load_json(ROOT / "fleet-template" / "setup-plan.json.example")
     )
     telegram_profile = load_json(
         ROOT / "fleet-template" / "telegram-profile.json.example"
@@ -86,7 +90,7 @@ def validate_schemas():
     jsonschema.validate(telegram_profile, telegram_profile_schema)
     jsonschema.validate(
         {
-            "aidee_version": "v0.1.0-alpha.21",
+            "aidee_version": latest(),
             "source_commit": "a" * 40,
             "tag": "aidee-assistant:0.1.0-alpha.11-aaaaaaaaaaaa",
             "image_id": "sha256:" + "b" * 64,
@@ -203,7 +207,13 @@ def validate_setup_guidance():
             raise AssertionError(f"README setup prompt is missing: {required_text}")
 
     setup = (ROOT / "docs" / "setup.md").read_text()
-    latest = (ROOT / "LATEST").read_text().strip()
+    release = latest()
+    notes = ROOT / "platform" / "releases" / f"{release}.md"
+    if not notes.is_file():
+        raise AssertionError(f"Missing release notes for {release}")
+    readme = (ROOT / "platform" / "releases" / "README.md").read_text()
+    if f"`{release}`" not in readme:
+        raise AssertionError("Release README does not mention LATEST")
     for state in ["interview", "plan", "approval", "install", "validate", "handoff"]:
         if f"`{state}`" not in setup:
             raise AssertionError(f"Setup state is missing: {state}")
@@ -211,14 +221,13 @@ def validate_setup_guidance():
         "sudo ./setup.sh --plan setup-plan.json",
         "sudo ./setup.sh",
         "SETUP_PLAN_JSON",
-        latest,
+        "https://raw.githubusercontent.com/wetek/aidee/main/LATEST",
+        '"release": "RELEASE"',
+        "git clone --branch RELEASE",
+        "Do not guess the current release",
     ]:
         if required_text not in setup:
             raise AssertionError(f"Setup handoff is missing: {required_text}")
-    if latest != "v0.1.0-alpha.21":
-        raise AssertionError("LATEST does not name the Alpha 21 release")
-    if f'"release": "{latest}"' not in setup:
-        raise AssertionError("Setup guide does not use the LATEST release")
 
     wizard_style = (ROOT / "docs" / "wizard-style.md").read_text()
     for required_text in [
@@ -235,18 +244,24 @@ def validate_setup_guidance():
 
     plan_tool = ROOT / "platform" / "setup" / "plan.py"
     example_plan = ROOT / "fleet-template" / "setup-plan.json.example"
-    for command in [
-        ["python3", str(plan_tool), str(example_plan)],
-        ["bash", str(ROOT / "setup.sh"), "--check-plan", str(example_plan)],
-    ]:
-        result = subprocess.run(command, capture_output=True, text=True)
-        if result.returncode != 0:
-            raise AssertionError(
-                f"Setup plan validation command failed: {result.stderr}"
-            )
+    bound_plan = bind_latest(load_json(example_plan))
+    if bound_plan.get("release") != release:
+        raise AssertionError("Setup plan example does not bind to LATEST")
+    with tempfile.TemporaryDirectory() as temporary_directory:
+        bound_path = Path(temporary_directory) / "setup-plan.json"
+        bound_path.write_text(json.dumps(bound_plan, indent=2) + "\n")
+        for command in [
+            ["python3", str(plan_tool), str(bound_path)],
+            ["bash", str(ROOT / "setup.sh"), "--check-plan", str(bound_path)],
+        ]:
+            result = subprocess.run(command, capture_output=True, text=True)
+            if result.returncode != 0:
+                raise AssertionError(
+                    f"Setup plan validation command failed: {result.stderr}"
+                )
 
     with tempfile.TemporaryDirectory() as temporary_directory:
-        unsafe_plan = load_json(example_plan)
+        unsafe_plan = bind_latest(load_json(example_plan))
         unsafe_plan["controller"]["google_" + "api_key"] = "redacted"  # pragma: allowlist secret
         unsafe_path = Path(temporary_directory) / "unsafe-plan.json"
         unsafe_path.write_text(json.dumps(unsafe_plan))

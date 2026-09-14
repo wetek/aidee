@@ -116,10 +116,30 @@ exit 1
             self.assertIn("--continuity", create_calls)
             self.assertIn("Start update", create_calls)
             self.assertIn("Apply now", create_calls)
-            self.assertIn(
-                "until the owner taps\nStart update",
+            self.assertIn("send-telegram-choices.py", create_calls)
+            self.assertIn("Cron runs cannot use the Telegram clarify tool", create_calls)
+            self.assertNotIn(
+                "Then send one Telegram clarify whose only options are Start update",
                 create_calls,
             )
+            self.assertNotIn("Options:", create_calls)
+            skill_text = (
+                ROOT / "platform/shared-skills/controller-update/SKILL.md"
+            ).read_text()
+            self.assertIn("send-telegram-choices.py", skill_text)
+            self.assertIn("Telegram clarify is unavailable", skill_text)
+            self.assertNotIn(
+                "Then send one Telegram clarify whose only options are:",
+                skill_text,
+            )
+            default_source = (
+                ROOT / "platform/controller-tools/install-default-crons.py"
+            ).read_text()
+            legacy_source = (
+                ROOT / "platform/controller-tools/install-update-cron.py"
+            ).read_text()
+            self.assertIn("send-telegram-choices.py", default_source)
+            self.assertIn("send-telegram-choices.py", legacy_source)
 
     def test_skips_update_check_when_requested(self):
         with tempfile.TemporaryDirectory() as temporary_directory:

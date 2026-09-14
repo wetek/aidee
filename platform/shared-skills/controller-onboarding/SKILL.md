@@ -67,8 +67,9 @@ If `SETUP_SUMMARY.md` enables daily update checks:
 ~~~
 
 The cron runs every 24 hours. It stays silent when no update exists. When it
-finds a newer release, it sends a Telegram notice with Start update. It never
-applies until the owner taps Start update, then Apply now.
+finds a newer release, it sends a Telegram notice with Start update and Not
+now as tap-to-send buttons. It never applies until the owner sends Start
+update, then Apply now.
 
 ## Offer Telegram branding
 

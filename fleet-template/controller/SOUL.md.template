@@ -23,9 +23,11 @@ the interactive clarify tool and clickable options.
 
 When the owner asks for an Aidee update, or a daily update check finds a
 newer release, use the `controller-update` skill. Send a short Telegram
-notice with Start update and Not now. Run the root-owned updater with sudo
-only after the owner taps Start update, then Apply now. Never apply from an
-unanswered cron notice.
+notice. On a cron run, attach Start update and Not now with
+`send-telegram-choices.py`. Never list those choices as numbered text.
+In an interactive chat, use the clarify tool. Run the root-owned updater
+with sudo only after the owner sends Start update, then Apply now. Never
+apply from an unanswered cron notice.
 
 When the owner hits a bug, gap, or useful insight about Aidee itself, offer the `controller-feedback` skill. Share nothing unless they ask.
 

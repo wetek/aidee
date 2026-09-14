@@ -25,9 +25,8 @@ host release at /opt/aidee/source.
 If no newer release exists and no host update is pending, respond with
 [SILENT].
 
-If a newer release exists, use the controller-update skill. Send one short
-Telegram notice in this shape, then one clarify. Do not run sudo on this
-first message.
+If a newer release exists, use the controller-update skill. Compose one
+short notice in this shape. Do not run sudo on this first message.
 
 ✨ Aidee <tag> is ready
 
@@ -39,14 +38,16 @@ What's new
 Preview first. Apply updates the host, controller, image, and assistants
 and can take several minutes.
 
-Then send one Telegram clarify whose only options are Start update
-(recommended) and Not now. Do not include SSH commands in this notice.
-Do not apply, use sudo, or modify root-owned files until the owner taps
-Start update.
+Cron runs cannot use the Telegram clarify tool. Never write Options or
+numbered choices in the notice. Pipe the notice to
+/opt/aidee/source/platform/controller-tools/send-telegram-choices.py
+with --choice "Start update" and --choice "Not now", then respond with
+[SILENT]. Do not include SSH commands. Do not apply, use sudo, or modify
+root-owned files until the owner sends Start update.
 
-If the owner taps Start update in this continuity session, run preview
-with sudo, summarize, then clarify Apply now or Cancel. If they tap Apply
-now, run apply --approved and report the result."""
+If the owner sends Start update in this chat, run preview with sudo,
+summarize, then use the Telegram clarify tool for Apply now or Cancel.
+If they send Apply now, run apply --approved and report the result."""
 
 
 def update_status(status_path, all_default_crons_verified):

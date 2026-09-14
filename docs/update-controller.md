@@ -2,10 +2,10 @@
 
 These instructions are for an existing Aidee VPS. When a newer tag exists,
 the controller sends a Telegram notice and offers Start update. After the
-owner taps Start update, then Apply now, the controller runs the fleet
+owner sends Start update, then Apply now, the controller runs the fleet
 updater with sudo.
 
-SSH remains a fallback when Telegram clarify is unavailable. Apply can take
+SSH remains a fallback when Telegram buttons are unavailable. Apply can take
 several minutes because it rebuilds the assistant image.
 
 ## Rules
@@ -13,7 +13,9 @@ several minutes because it rebuilds the assistant image.
 1. Read `https://raw.githubusercontent.com/wetek/aidee/main/LATEST`.
 2. Require a version matching `v<major>.<minor>.<patch>-alpha.<number>`.
 3. The first Telegram notice is discovery only. Do not use sudo yet.
-4. Offer `Start update` and `Not now` with one Telegram clarify.
+4. Offer `Start update` and `Not now` as Telegram buttons. Cron runs
+   cannot use clarify, so they send those buttons with
+   `send-telegram-choices.py`. Interactive chats use clarify.
 5. After `Start update`, run preview with sudo and summarize the plan.
 6. After `Apply now`, run apply with `--approved`.
 7. Never apply from an unanswered cron run.
@@ -39,7 +41,9 @@ Preview first. Apply updates the host, controller, image, and assistants
 and can take several minutes.
 ~~~
 
-Then clarify `Start update` (recommended) or `Not now`.
+Then offer `Start update` or `Not now` as Telegram buttons. Do not write
+those labels as numbered text. Cron runs pipe the notice to
+`send-telegram-choices.py`. Interactive chats use the clarify tool.
 
 After `Start update`, run preview. After `Apply now`, run apply. Replace
 `RELEASE` with the exact tag from `LATEST`:
@@ -66,28 +70,28 @@ the effective system prompt and tool list.
 
 ## SSH fallback
 
-Use these commands from the owner's SSH terminal only when Telegram clarify
-is unavailable.
+Use these commands from the owner's SSH terminal only when Telegram buttons
+are unavailable.
 
 ### One-time bootstrap from Alpha 12 or older
 
-Older releases do not contain the fleet updater. Fetch the exact Alpha 21 tag
-and preview it:
+Older releases do not contain the fleet updater. Read `LATEST`, fetch that
+exact tag, and preview it. Replace `RELEASE` with the tag from `LATEST`:
 
 ~~~bash
 sudo install -d -m 0755 /opt/aidee/releases
-sudo git clone --branch v0.1.0-alpha.21 --depth 1 \
+sudo git clone --branch RELEASE --depth 1 \
   https://github.com/wetek/aidee.git \
-  /opt/aidee/releases/v0.1.0-alpha.21
-sudo /opt/aidee/releases/v0.1.0-alpha.21/platform/scripts/update-host.sh \
-  --release v0.1.0-alpha.21 --preview
+  /opt/aidee/releases/RELEASE
+sudo /opt/aidee/releases/RELEASE/platform/scripts/update-host.sh \
+  --release RELEASE --preview
 ~~~
 
 After reviewing the preview and explicitly approving it, run:
 
 ~~~bash
-sudo /opt/aidee/releases/v0.1.0-alpha.21/platform/scripts/update-host.sh \
-  --release v0.1.0-alpha.21 --apply --approved
+sudo /opt/aidee/releases/RELEASE/platform/scripts/update-host.sh \
+  --release RELEASE --apply --approved
 ~~~
 
 ### Later SSH updates

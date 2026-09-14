@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-AIDEE_RELEASE="v0.1.0-alpha.15"
 AIDEE_REPOSITORY="https://github.com/wetek/aidee.git"
 AIDEE_CONTROLLER_USER="${AIDEE_CONTROLLER_USER:-aidee-controller}"
 AIDEE_STATE_DIR="${AIDEE_STATE_DIR:-/var/lib/aidee}"
@@ -33,6 +32,11 @@ fail() {
   echo "Error: $*" >&2
   exit 1
 }
+
+AIDEE_RELEASE="$(<"${source_root}/LATEST")"
+if [[ ! "${AIDEE_RELEASE}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]+$ ]]; then
+  fail "LATEST must name a published tag."
+fi
 
 step() {
   echo

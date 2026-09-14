@@ -3,6 +3,7 @@ import importlib.util
 import json
 import os
 import shutil
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -12,6 +13,10 @@ import yaml
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "platform"))
+from release import bind_latest, latest  # noqa: E402
+
+RELEASE = latest()
 MODULE_PATH = ROOT / "platform" / "admin" / "aidee_admin.py"
 SPEC = importlib.util.spec_from_file_location("aidee_admin", MODULE_PATH)
 aidee_admin = importlib.util.module_from_spec(SPEC)
@@ -23,10 +28,10 @@ class AdminHelperTests(unittest.TestCase):
         image_id = "sha256:" + "a" * 64
         image_dir = state_root / "runtime" / "images"
         image_dir.mkdir(parents=True)
-        (image_dir / "v0.1.0-alpha.21.json").write_text(
+        (image_dir / f"{RELEASE}.json").write_text(
             json.dumps(
                 {
-                    "aidee_version": "v0.1.0-alpha.21",
+                    "aidee_version": RELEASE,
                     "image_id": image_id,
                     "source_commit": "testcommit",
                     "validation": "validated",
@@ -73,7 +78,7 @@ class AdminHelperTests(unittest.TestCase):
                 if command[:3] == ["docker", "image", "inspect"]:
                     if "org.opencontainers.image.revision" in command[-1]:
                         return "testcommit"
-                    return "v0.1.0-alpha.21"
+                    return RELEASE
                 if command[:3] == ["git", "-C", str(ROOT)]:
                     return "testcommit"
                 if command[:2] == ["docker", "ps"]:
@@ -88,8 +93,12 @@ class AdminHelperTests(unittest.TestCase):
                 path.mkdir(parents=True, exist_ok=True)
                 path.chmod(mode)
 
-            request = json.loads(
-                (ROOT / "fleet-template" / "assistant-request.json.example").read_text()
+            request = bind_latest(
+                json.loads(
+                    (
+                        ROOT / "fleet-template" / "assistant-request.json.example"
+                    ).read_text()
+                )
             )
 
             with (
@@ -305,7 +314,7 @@ class AdminHelperTests(unittest.TestCase):
                 if command[:3] == ["docker", "image", "inspect"]:
                     if "org.opencontainers.image.revision" in command[-1]:
                         return "testcommit"
-                    return "v0.1.0-alpha.21"
+                    return RELEASE
                 if command[:3] == ["git", "-C", str(ROOT)]:
                     return "testcommit"
                 if command[:2] == ["docker", "ps"]:
@@ -320,8 +329,12 @@ class AdminHelperTests(unittest.TestCase):
                 path.mkdir(parents=True, exist_ok=True)
                 path.chmod(mode)
 
-            request = json.loads(
-                (ROOT / "fleet-template" / "assistant-request.json.example").read_text()
+            request = bind_latest(
+                json.loads(
+                    (
+                        ROOT / "fleet-template" / "assistant-request.json.example"
+                    ).read_text()
+                )
             )
 
             with (
@@ -405,7 +418,7 @@ class AdminHelperTests(unittest.TestCase):
                 if command[:3] == ["docker", "image", "inspect"]:
                     if "org.opencontainers.image.revision" in command[-1]:
                         return "testcommit"
-                    return "v0.1.0-alpha.21"
+                    return RELEASE
                 if command[:3] == ["git", "-C", str(ROOT)]:
                     return "testcommit"
                 if command[:2] == ["docker", "ps"]:
@@ -420,8 +433,12 @@ class AdminHelperTests(unittest.TestCase):
                 path.mkdir(parents=True, exist_ok=True)
                 path.chmod(mode)
 
-            request = json.loads(
-                (ROOT / "fleet-template" / "assistant-request.json.example").read_text()
+            request = bind_latest(
+                json.loads(
+                    (
+                        ROOT / "fleet-template" / "assistant-request.json.example"
+                    ).read_text()
+                )
             )
 
             with (
@@ -494,7 +511,7 @@ class AdminHelperTests(unittest.TestCase):
                 if command[:3] == ["docker", "image", "inspect"]:
                     if "org.opencontainers.image.revision" in command[-1]:
                         return "testcommit"
-                    return "v0.1.0-alpha.21"
+                    return RELEASE
                 if command[:3] == ["git", "-C", str(ROOT)]:
                     return "testcommit"
                 if command[:2] == ["docker", "ps"]:
@@ -513,8 +530,12 @@ class AdminHelperTests(unittest.TestCase):
             def fake_chown(path, uid, gid):
                 chown_calls.append((str(path), uid, gid))
 
-            request = json.loads(
-                (ROOT / "fleet-template" / "assistant-request.json.example").read_text()
+            request = bind_latest(
+                json.loads(
+                    (
+                        ROOT / "fleet-template" / "assistant-request.json.example"
+                    ).read_text()
+                )
             )
 
             with (
@@ -602,7 +623,7 @@ class AdminHelperTests(unittest.TestCase):
                 if command[:3] == ["docker", "image", "inspect"]:
                     if "org.opencontainers.image.revision" in command[-1]:
                         return "testcommit"
-                    return "v0.1.0-alpha.21"
+                    return RELEASE
                 if command[:3] == ["git", "-C", str(ROOT)]:
                     return "testcommit"
                 if command[:2] == ["docker", "ps"]:
@@ -617,8 +638,12 @@ class AdminHelperTests(unittest.TestCase):
                 path.mkdir(parents=True, exist_ok=True)
                 path.chmod(mode)
 
-            request = json.loads(
-                (ROOT / "fleet-template" / "assistant-request.json.example").read_text()
+            request = bind_latest(
+                json.loads(
+                    (
+                        ROOT / "fleet-template" / "assistant-request.json.example"
+                    ).read_text()
+                )
             )
 
             with (
@@ -696,7 +721,7 @@ class AdminHelperTests(unittest.TestCase):
                         "pids_limit": 512,
                     },
                     "image": {
-                        "aidee_version": "v0.1.0-alpha.21",
+                        "aidee_version": RELEASE,
                         "image_id": "sha256:" + "a" * 64,
                     },
                 }
@@ -925,8 +950,10 @@ class AdminHelperTests(unittest.TestCase):
             self.assertIn(["docker", "restart", "aidee-personal"], commands)
 
     def test_rejects_unapproved_request(self):
-        request = json.loads(
-            (ROOT / "fleet-template" / "assistant-request.json.example").read_text()
+        request = bind_latest(
+            json.loads(
+                (ROOT / "fleet-template" / "assistant-request.json.example").read_text()
+            )
         )
         request["owner_approved"] = False
         with mock.patch.object(aidee_admin, "SOURCE_ROOT", ROOT):
@@ -1015,8 +1042,12 @@ class AdminHelperTests(unittest.TestCase):
             with tempfile.TemporaryDirectory() as temporary_directory:
                 state_root = Path(temporary_directory)
                 self.create_state(state_root)
-                request = json.loads(
-                    (ROOT / "fleet-template" / "assistant-request.json.example").read_text()
+                request = bind_latest(
+                    json.loads(
+                        (
+                            ROOT / "fleet-template" / "assistant-request.json.example"
+                        ).read_text()
+                    )
                 )
                 request["assistant"]["id"] = f"test-{kind}"
                 request["assistant"]["name"] = f"Test {kind.capitalize()}"
@@ -1026,7 +1057,7 @@ class AdminHelperTests(unittest.TestCase):
                     if command[:3] == ["docker", "image", "inspect"]:
                         if "org.opencontainers.image.revision" in command[-1]:
                             return "testcommit"
-                        return "v0.1.0-alpha.21"
+                        return RELEASE
                     if command[:3] == ["git", "-C", str(ROOT)]:
                         return "testcommit"
                     if command[:2] == ["docker", "ps"]:
