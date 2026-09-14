@@ -674,6 +674,20 @@ class FleetUpdateTests(unittest.TestCase):
         self.assertTrue(kwargs.get("capture_output"))
         self.assertEqual(kwargs.get("stdin"), subprocess.DEVNULL)
 
+    def test_streamed_commands_do_not_inherit_the_terminal(self):
+        with mock.patch("subprocess.run") as run:
+            run.return_value = subprocess.CompletedProcess(["true"], 0)
+            reconcile.Runner().run(["true"], stream=True)
+        self.assertEqual(run.call_args.kwargs.get("stdin"), subprocess.DEVNULL)
+
+    def test_gateway_install_skips_the_systemd_prompt(self):
+        installer = (
+            ROOT / "platform/scripts/install-controller-gateway.sh"
+        ).read_text()
+        self.assertIn("--start-now", installer)
+        self.assertIn("--start-on-login", installer)
+        self.assertIn("</dev/null", installer)
+
     def test_plugin_enable_skips_the_tool_override_prompt(self):
         install = (
             ROOT / "platform/scripts/install-dashboard-plugins.sh"

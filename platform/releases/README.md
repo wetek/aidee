@@ -59,4 +59,6 @@ Apply now. An unanswered cron notice never applies.
 `v0.1.0-alpha.20` relocates leftover clones when the canonical repo name is a
 dangling symlink or file.
 
+`v0.1.0-alpha.21` installs the controller gateway without a systemd TTY prompt.
+
 

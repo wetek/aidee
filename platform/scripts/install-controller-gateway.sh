@@ -41,7 +41,9 @@ env \
   --force \
   --system \
   --run-as-user "${AIDEE_CONTROLLER_USER}" \
-  --start-now
+  --start-now \
+  --start-on-login \
+  </dev/null
 
 install -d -m 0755 -o root -g root "${drop_in_dir}"
 cat > "${drop_in_dir}/aidee-hardening.conf" <<EOF

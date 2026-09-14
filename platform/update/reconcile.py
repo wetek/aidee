@@ -29,7 +29,7 @@ class ReconcileError(RuntimeError):
 class Runner:
     def run(self, command, check=True, stream=False):
         if stream:
-            result = subprocess.run(command)
+            result = subprocess.run(command, stdin=subprocess.DEVNULL)
             if check and result.returncode:
                 raise ReconcileError(f"{command[0]} failed")
             return result
