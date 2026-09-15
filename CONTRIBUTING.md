@@ -16,6 +16,7 @@ Create a Python environment, install `requirements-dev.txt`, then run:
 ~~~bash
 bash -n setup.sh platform/scripts/*.sh
 shellcheck setup.sh platform/scripts/*.sh
+bash platform/scripts/build-dashboard-plugins.sh
 python tests/validate_repository.py
 python -m unittest discover -s tests -p 'test_*.py'
 ~~~

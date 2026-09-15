@@ -74,5 +74,8 @@ update notice.
 `v0.1.0-alpha.26` keeps Telegram apply alive across a gateway restart and
 sends a result before the chat reconnects.
 
+`v0.1.0-alpha.27` adds Aidee-owned dashboard homes for the fleet and each
+assistant, plus install-wide Langfuse and OpenCode settings.
+
 
 

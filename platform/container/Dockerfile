@@ -29,6 +29,7 @@ RUN npm install --global \
 
 COPY platform/shared-skills/unslop/ /opt/hermes/skills/unslop/
 COPY platform/hermes-plugins/aidee-onboarding/ /opt/hermes/plugins/aidee-onboarding/
+COPY platform/dashboard-plugins/aidee-assistant-home/ /opt/hermes/plugins/aidee-assistant-home/
 COPY platform/shared-instructions/ /opt/aidee/shared-instructions/
 COPY platform/shared-workflows/ /opt/aidee/shared-workflows/
 COPY platform/defaults/assistant.yaml /opt/aidee/defaults/assistant.yaml

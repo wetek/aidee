@@ -36,6 +36,9 @@ Prove that an owner can use the Aidee setup guide to install a private fleet of 
 - Assistant create, start, stop, and status requests.
 - Personal assistant provisioning through Telegram.
 - Tailscale HTTPS ports for assistant dashboards.
+- Controller Fleet overview with host, release, onboarding, one install-wide Langfuse setup, controller OpenCode settings, and read-only assistant cards. Each card has an Open dashboard button.
+- Assistant overview with that assistant's status, identity, purpose, read-only Aidee agent tracing status, OpenCode settings, and read-only `USER.md` and `MEMORY.md`.
+- OpenCode enable installs the pinned CLI on the controller, or enables the image CLI plus a SOUL.md coding-delegation instruction on assistants. Install Langfuse keys stay in the controller Hermes `.env` and are copied to assistants with a per-agent `HERMES_LANGFUSE_ENV`. OpenCode plugin names are written next to them so they show under Custom Keys.
 - Fleet tab login management for assistant dashboards.
 
 ## Awaiting VPS validation

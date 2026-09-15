@@ -2,7 +2,9 @@
 import importlib.util
 import json
 import os
+import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -166,6 +168,8 @@ class AdminHelperTests(unittest.TestCase):
             self.assertNotIn("--network host", flattened)
             self.assertIn("--read-only", flattened)
             self.assertIn("no-new-privileges:true", flattened)
+            self.assertNotIn("--env HOME=", flattened)
+            self.assertNotIn("--env HERMES_HOME=", flattened)
             proxy_create = next(
                 command
                 for command in docker_create
@@ -401,6 +405,90 @@ class AdminHelperTests(unittest.TestCase):
                     / "dashboard-initial-password"
                 ).is_file()
             )
+
+    def test_create_assistant_inherits_install_langfuse(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            state_root = Path(temporary_directory)
+            self.create_state(state_root)
+            controller_hermes = state_root / "controller-home" / ".hermes"
+            controller_hermes.mkdir(parents=True)
+            (controller_hermes / "config.yaml").write_text(
+                yaml.safe_dump({"plugins": {"enabled": ["observability/langfuse"]}})
+            )
+            (controller_hermes / ".env").write_text(
+                "HERMES_LANGFUSE_PUBLIC_KEY=pk-lf-create-public\n"
+                "HERMES_LANGFUSE_SECRET_KEY=sk-lf-create-secret\n"
+                "HERMES_LANGFUSE_BASE_URL=https://cloud.langfuse.com\n"
+                "HERMES_LANGFUSE_ENV=controller\n"
+            )
+
+            def fake_run(command):
+                if command[:3] == ["docker", "image", "inspect"]:
+                    if "org.opencontainers.image.revision" in command[-1]:
+                        return "testcommit"
+                    return RELEASE
+                if command[:3] == ["git", "-C", str(ROOT)]:
+                    return "testcommit"
+                if command[:2] == ["docker", "ps"]:
+                    return ""
+                if command[:3] == ["tailscale", "status", "--json"]:
+                    return json.dumps(
+                        {"Self": {"DNSName": "pilot.example.ts.net."}}
+                    )
+                return ""
+
+            def fake_directory(path, uid, gid, mode):
+                path.mkdir(parents=True, exist_ok=True)
+                path.chmod(mode)
+
+            request = bind_latest(
+                json.loads(
+                    (
+                        ROOT / "fleet-template" / "assistant-request.json.example"
+                    ).read_text()
+                )
+            )
+
+            with (
+                mock.patch.object(aidee_admin, "STATE_ROOT", state_root),
+                mock.patch.object(
+                    aidee_admin,
+                    "IMAGE_RECORD_ROOT",
+                    state_root / "runtime" / "images",
+                ),
+                mock.patch.object(
+                    aidee_admin,
+                    "OWNER_RECORD",
+                    state_root / "owner.json",
+                ),
+                mock.patch.object(aidee_admin, "SOURCE_ROOT", ROOT),
+                mock.patch.object(
+                    aidee_admin,
+                    "controller_identity",
+                    return_value=(os.getuid(), os.getgid()),
+                ),
+                mock.patch.object(aidee_admin, "run", side_effect=fake_run),
+                mock.patch.object(aidee_admin, "validate_capacity_and_ports"),
+                mock.patch.object(aidee_admin.os, "chown"),
+                mock.patch.object(
+                    aidee_admin,
+                    "ensure_directory",
+                    side_effect=fake_directory,
+                ),
+            ):
+                result = aidee_admin.create_assistant(request)
+
+            self.assertEqual(result["status"], "provisioning")
+            runtime = state_root / "runtime/assistants/personal/data"
+            env_text = (runtime / ".env").read_text()
+            self.assertIn("HERMES_LANGFUSE_PUBLIC_KEY=pk-lf-create-public", env_text)
+            self.assertIn("HERMES_LANGFUSE_ENV=personal", env_text)
+            self.assertNotIn("sk-lf-create-secret", json.dumps(result))
+            config = yaml.safe_load((runtime / "config.yaml").read_text())
+            self.assertIn("observability/langfuse", config["plugins"]["enabled"])
+            soul = (runtime / "SOUL.md").read_text()
+            self.assertIn("AIDEE:AIDEE-AGENT-TRACING:BEGIN", soul)
+            self.assertIn("not a repository's own Langfuse", soul)
 
     def test_create_assistant_inherits_controller_custom_ttl(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -1176,6 +1264,10 @@ class AdminHelperTests(unittest.TestCase):
                 install_dir / "assistant_state.py",
             )
             shutil.copy(
+                ROOT / "platform/admin/fleet_status.py",
+                install_dir / "fleet_status.py",
+            )
+            shutil.copy(
                 ROOT / "platform/setup/onboarding_state.py",
                 install_dir / "onboarding_state.py",
             )
@@ -1216,6 +1308,7 @@ class AdminHelperTests(unittest.TestCase):
             installer,
         )
         self.assertIn("${install_dir}/onboarding_state.py", installer)
+        self.assertIn("${install_dir}/fleet_status.py", installer)
 
         with tempfile.TemporaryDirectory() as temporary_directory:
             install_dir = Path(temporary_directory) / "usr" / "local" / "lib" / "aidee"
@@ -1238,3 +1331,1350 @@ class AdminHelperTests(unittest.TestCase):
             status = module.default_onboarding_status("personal")
             self.assertEqual(status["schema_version"], 2)
             self.assertEqual(status["role"], "assistant")
+
+
+SECRET_KEY = re.compile(
+    r"password|secret|token|credential|api_key|authorization|private_key",
+    re.I,
+)
+
+
+def assert_public_payload(test, value, path="root"):
+    if isinstance(value, dict):
+        for key, child in value.items():
+            test.assertIsNone(
+                SECRET_KEY.search(str(key)),
+                f"secret key leaked at {path}.{key}",
+            )
+            assert_public_payload(test, child, f"{path}.{key}")
+        return
+    if isinstance(value, list):
+        for index, child in enumerate(value):
+            assert_public_payload(test, child, f"{path}[{index}]")
+
+
+class FleetOverviewTests(unittest.TestCase):
+    def write_registry(self, state_root, assistants=None, extra_platform=None):
+        fleet = state_root / "fleet"
+        fleet.mkdir(parents=True, exist_ok=True)
+        platform = {
+            "repository": "https://example.com/aidee.git",
+            "default_version": "0.1.0",
+            "desired_release": RELEASE,
+        }
+        if extra_platform:
+            platform.update(extra_platform)
+        registry = {
+            "schema_version": 1,
+            "platform": platform,
+            "controller": {"id": "aidee-controller", "state_path": "controller"},
+            "assistants": assistants or [],
+        }
+        (fleet / "registry.yaml").write_text(yaml.safe_dump(registry, sort_keys=False))
+        return registry
+
+    def overview_request(self):
+        return {
+            "schema_version": 1,
+            "request_id": "fleet-overview-test",
+            "owner_approved": True,
+            "operation": "fleet_overview",
+        }
+
+    def test_overview_filters_secrets_and_renders_empty_fleet(self):
+        leaked = aidee_admin.public_payload(
+            {
+                "dashboard_password": "hidden",
+                "session_secret": "hidden",
+                "api_token": "hidden",
+                "name": "Pilot",
+            }
+        )
+        self.assertEqual(leaked, {"name": "Pilot"})
+
+        with tempfile.TemporaryDirectory() as temporary:
+            state_root = Path(temporary)
+            self.write_registry(state_root)
+            (state_root / "LATEST").write_text(f"{RELEASE}\n")
+            (state_root / "runtime" / "images").mkdir(parents=True)
+            with (
+                mock.patch.object(aidee_admin, "STATE_ROOT", state_root),
+                mock.patch.object(aidee_admin, "SOURCE_ROOT", ROOT),
+                mock.patch.object(
+                    aidee_admin,
+                    "IMAGE_RECORD_ROOT",
+                    state_root / "runtime" / "images",
+                ),
+                mock.patch.object(
+                    aidee_admin,
+                    "run_optional",
+                    return_value=(None, "docker unavailable"),
+                ),
+            ):
+                aidee_admin.validate_request(self.overview_request())
+                result = aidee_admin.fleet_overview()
+            self.assertEqual(result["assistants"], [])
+            self.assertEqual(result["release"]["desired"], RELEASE)
+            self.assertIn("controller", result)
+            assert_public_payload(self, result)
+
+    def test_overview_survives_missing_onboarding_and_docker_failures(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state_root = Path(temporary)
+            self.write_registry(
+                state_root,
+                [
+                    {
+                        "id": "pilot",
+                        "name": "Pilot",
+                        "kind": "coding",
+                        "status": "active",
+                        "container_name": "aidee-pilot",
+                        "dashboard": {"url": "https://pilot.example.ts.net:8443"},
+                        "resources": {
+                            "cpu_limit": 0.75,
+                            "memory_mb": 2048,
+                            "pids_limit": 512,
+                        },
+                        "image": {
+                            "aidee_version": RELEASE,
+                            "image_id": "sha256:" + "a" * 64,
+                            "dashboard_password": "should-not-leak",
+                        },
+                    }
+                ],
+            )
+            with (
+                mock.patch.object(aidee_admin, "STATE_ROOT", state_root),
+                mock.patch.object(aidee_admin, "SOURCE_ROOT", ROOT),
+                mock.patch.object(
+                    aidee_admin,
+                    "IMAGE_RECORD_ROOT",
+                    state_root / "missing-images",
+                ),
+                mock.patch.object(
+                    aidee_admin,
+                    "probe_assistant_live",
+                    return_value={
+                        "health_status": "unknown",
+                        "running": False,
+                        "image_version": None,
+                        "usage": {
+                            "cpu_percent": None,
+                            "memory_mb": None,
+                            "error": "docker inspect failed",
+                        },
+                        "error": "docker inspect failed",
+                    },
+                ),
+            ):
+                result = aidee_admin.fleet_overview()
+            card = result["assistants"][0]
+            self.assertEqual(card["id"], "pilot")
+            self.assertEqual(card["health"]["status"], "unknown")
+            self.assertEqual(card["health"]["error"], "docker inspect failed")
+            self.assertEqual(card["onboarding"]["status"], "unavailable")
+            self.assertNotIn("dashboard_password", json.dumps(result))
+            assert_public_payload(self, result)
+
+    def test_overview_renders_healthy_and_stopped_assistants(self):
+        inspect_healthy = [
+            {
+                "State": {
+                    "Status": "running",
+                    "Running": True,
+                    "Health": {"Status": "healthy"},
+                },
+                "Config": {
+                    "Env": ["HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=leak"],
+                    "Labels": {"org.opencontainers.image.version": RELEASE},
+                },
+            }
+        ]
+        inspect_stopped = [
+            {
+                "State": {"Status": "exited", "Running": False},
+                "Config": {"Env": ["TOKEN=leak"], "Labels": {}},
+            }
+        ]
+        stats = {"CPUPerc": "12.5%", "MemUsage": "256MiB / 2GiB"}
+
+        def fake_optional(command, timeout=5):
+            if command[:2] == ["docker", "inspect"]:
+                if command[2] == "aidee-pilot":
+                    return json.dumps(inspect_healthy), None
+                if command[2] == "aidee-idle":
+                    return json.dumps(inspect_stopped), None
+            if command[:2] == ["docker", "stats"]:
+                if command[-1] == "aidee-pilot":
+                    return json.dumps(stats), None
+                return None, "stats unavailable"
+            if command[:2] == ["git", "-C"]:
+                return RELEASE, None
+            return None, "unused"
+
+        with tempfile.TemporaryDirectory() as temporary:
+            state_root = Path(temporary)
+            self.write_registry(
+                state_root,
+                [
+                    {
+                        "id": "pilot",
+                        "name": "Pilot",
+                        "kind": "coding",
+                        "status": "active",
+                        "container_name": "aidee-pilot",
+                        "dashboard": {"url": "https://pilot.example.ts.net:8443"},
+                        "resources": {
+                            "cpu_limit": 0.75,
+                            "memory_mb": 2048,
+                            "pids_limit": 512,
+                        },
+                        "image": {
+                            "aidee_version": RELEASE,
+                            "image_id": "sha256:" + "b" * 64,
+                        },
+                    },
+                    {
+                        "id": "idle",
+                        "name": "Idle",
+                        "kind": "personal",
+                        "status": "stopped",
+                        "container_name": "aidee-idle",
+                        "resources": {"cpu_limit": 0.5, "memory_mb": 1024},
+                        "image": {"aidee_version": RELEASE},
+                    },
+                ],
+            )
+            status_dir = state_root / "runtime/assistants/pilot/data/aidee"
+            status_dir.mkdir(parents=True)
+            (status_dir / "onboarding-status.json").write_text(
+                json.dumps(
+                    {
+                        "rollup": {
+                            "status": "complete",
+                            "incomplete_required": [],
+                            "incomplete_optional": [],
+                            "complete": True,
+                        }
+                    }
+                )
+            )
+            images = state_root / "images"
+            images.mkdir()
+            (images / f"{RELEASE}.json").write_text(
+                json.dumps(
+                    {
+                        "aidee_version": RELEASE,
+                        "validation": "validated",
+                    }
+                )
+            )
+            with (
+                mock.patch.object(aidee_admin, "STATE_ROOT", state_root),
+                mock.patch.object(aidee_admin, "SOURCE_ROOT", ROOT),
+                mock.patch.object(aidee_admin, "IMAGE_RECORD_ROOT", images),
+                mock.patch.object(
+                    aidee_admin, "run_optional", side_effect=fake_optional
+                ),
+            ):
+                result = aidee_admin.fleet_overview()
+            healthy, stopped = result["assistants"]
+            self.assertEqual(healthy["health"]["status"], "healthy")
+            self.assertTrue(healthy["health"]["running"])
+            self.assertEqual(healthy["resources"]["usage"]["cpu_percent"], 12.5)
+            self.assertEqual(healthy["resources"]["usage"]["memory_mb"], 256.0)
+            self.assertEqual(healthy["image"]["installed_version"], RELEASE)
+            self.assertEqual(healthy["onboarding"]["status"], "complete")
+            self.assertEqual(stopped["health"]["status"], "stopped")
+            self.assertFalse(stopped["health"]["running"])
+            self.assertNotIn("HERMES_DASHBOARD_BASIC_AUTH_PASSWORD", json.dumps(result))
+            self.assertNotIn("TOKEN=leak", json.dumps(result))
+            assert_public_payload(self, result)
+
+    def test_overview_rejects_missing_or_malformed_registry(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state_root = Path(temporary)
+            with mock.patch.object(aidee_admin, "STATE_ROOT", state_root):
+                with self.assertRaises(aidee_admin.AdminError):
+                    aidee_admin.fleet_overview()
+            (state_root / "fleet").mkdir()
+            (state_root / "fleet/registry.yaml").write_text("- not-a-mapping\n")
+            with mock.patch.object(aidee_admin, "STATE_ROOT", state_root):
+                with self.assertRaises(aidee_admin.AdminError):
+                    aidee_admin.fleet_overview()
+            (state_root / "fleet/registry.yaml").write_text(
+                yaml.safe_dump(
+                    {
+                        "schema_version": 1,
+                        "platform": {"repository": "x", "default_version": "0.1.0"},
+                        "controller": {"id": "aidee-controller", "state_path": "c"},
+                        "assistants": {"id": "broken"},
+                    }
+                )
+            )
+            with (
+                mock.patch.object(aidee_admin, "STATE_ROOT", state_root),
+                mock.patch.object(aidee_admin, "SOURCE_ROOT", ROOT),
+                mock.patch.object(
+                    aidee_admin,
+                    "IMAGE_RECORD_ROOT",
+                    state_root / "images",
+                ),
+            ):
+                result = aidee_admin.fleet_overview()
+            self.assertEqual(result["assistants"], [])
+            self.assertIn(
+                "fleet registry assistants are malformed",
+                result["warnings"],
+            )
+
+    def test_create_assistant_writes_profile_and_home_plugin(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            state_root = Path(temporary_directory)
+            self_helper = AdminHelperTests()
+            self_helper.create_state(state_root)
+
+            def fake_run(command):
+                if command[:3] == ["docker", "image", "inspect"]:
+                    if "org.opencontainers.image.revision" in command[-1]:
+                        return "testcommit"
+                    return RELEASE
+                if command[:3] == ["git", "-C", str(ROOT)]:
+                    return "testcommit"
+                if command[:2] == ["docker", "ps"]:
+                    return ""
+                if command[:3] == ["tailscale", "status", "--json"]:
+                    return json.dumps({"Self": {"DNSName": "pilot.example.ts.net."}})
+                return ""
+
+            def fake_directory(path, uid, gid, mode):
+                path.mkdir(parents=True, exist_ok=True)
+                path.chmod(mode)
+
+            request = bind_latest(
+                json.loads(
+                    (
+                        ROOT / "fleet-template" / "assistant-request.json.example"
+                    ).read_text()
+                )
+            )
+            with (
+                mock.patch.object(aidee_admin, "STATE_ROOT", state_root),
+                mock.patch.object(
+                    aidee_admin,
+                    "IMAGE_RECORD_ROOT",
+                    state_root / "runtime" / "images",
+                ),
+                mock.patch.object(
+                    aidee_admin, "OWNER_RECORD", state_root / "owner.json"
+                ),
+                mock.patch.object(aidee_admin, "SOURCE_ROOT", ROOT),
+                mock.patch.object(
+                    aidee_admin,
+                    "controller_identity",
+                    return_value=(os.getuid(), os.getgid()),
+                ),
+                mock.patch.object(aidee_admin, "run", side_effect=fake_run),
+                mock.patch.object(aidee_admin, "validate_capacity_and_ports"),
+                mock.patch.object(aidee_admin.os, "chown"),
+                mock.patch.object(
+                    aidee_admin, "ensure_directory", side_effect=fake_directory
+                ),
+            ):
+                aidee_admin.create_assistant(request)
+
+            runtime = state_root / "runtime/assistants/personal/data"
+            profile = json.loads((runtime / "aidee/profile.json").read_text())
+            self.assertEqual(profile["id"], "personal")
+            self.assertEqual(profile["kind"], "personal")
+            self.assertEqual(profile["projects"], [])
+            self.assertNotIn("password", json.dumps(profile))
+            config = yaml.safe_load((runtime / "config.yaml").read_text())
+            self.assertIn("aidee-assistant-home", config["plugins"]["enabled"])
+            self.assertTrue(
+                (runtime / "plugins/aidee-assistant-home/plugin.yaml").is_file()
+            )
+
+    def test_assistant_home_reads_only_fixed_memory_files(self):
+        spec = importlib.util.spec_from_file_location(
+            "assistant_home_api",
+            ROOT
+            / "platform/dashboard-plugins/aidee-assistant-home/dashboard/plugin_api.py",
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "aidee").mkdir()
+            (root / "memories").mkdir()
+            (root / "aidee/profile.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "id": "pilot",
+                        "name": "Pilot",
+                        "kind": "coding",
+                        "purpose": "Ship code",
+                        "projects": [],
+                        "capabilities": ["coding"],
+                        "dashboard_password": "hidden",
+                    }
+                )
+            )
+            (root / "memories/USER.md").write_text("# User\nOwner\n")
+            (root / "memories/MEMORY.md").write_bytes(b"x" * (module.MAX_MEMORY_BYTES + 8))
+            (root / "memories/SECRETS.md").write_text("do-not-read\n")
+            home = module.load_home(root)
+            self.assertEqual(home["profile"]["id"], "pilot")
+            self.assertNotIn("dashboard_password", home["profile"])
+            self.assertEqual(home["user_md"]["content"], "# User\nOwner\n")
+            self.assertTrue(home["memory_md"]["truncated"])
+            self.assertEqual(home["memory_md"]["bytes"], module.MAX_MEMORY_BYTES)
+            self.assertEqual(home["onboarding"]["error"], "onboarding status is missing")
+            self.assertNotIn("SECRETS.md", json.dumps(home))
+            (root / "aidee/profile.json").write_text("{")
+            broken = module.load_home(root)
+            self.assertIsNone(broken["profile"])
+            self.assertEqual(broken["profile_error"], "assistant profile is malformed")
+            shutil.rmtree(root / "aidee")
+            missing = module.load_home(root)
+            self.assertEqual(missing["profile_error"], "assistant profile is missing")
+
+    def test_overview_reports_langfuse_and_opencode_without_secrets(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state_root = Path(temporary)
+            self.write_registry(
+                state_root,
+                [
+                    {
+                        "id": "pilot",
+                        "name": "Pilot",
+                        "kind": "coding",
+                        "status": "active",
+                        "container_name": "aidee-pilot",
+                        "resources": {"cpu_limit": 0.75, "memory_mb": 2048},
+                        "image": {
+                            "aidee_version": RELEASE,
+                            "image_id": "sha256:" + "c" * 64,
+                        },
+                    }
+                ],
+            )
+            controller = state_root / "controller-home" / ".hermes"
+            controller.mkdir(parents=True)
+            (controller / "config.yaml").write_text(
+                yaml.safe_dump(
+                    {
+                        "plugins": {
+                            "enabled": [
+                                "observability/langfuse",
+                                "aidee-overview",
+                            ]
+                        }
+                    }
+                )
+            )
+            (controller / ".env").write_text(
+                "HERMES_LANGFUSE_PUBLIC_KEY=pk-lf-test-public\n"
+                "HERMES_LANGFUSE_SECRET_KEY=sk-lf-test-secret\n"
+                "HERMES_LANGFUSE_ENV=controller\n"
+            )
+            (controller / "plugins" / "aidee-overview").mkdir(parents=True)
+            (controller / "plugins" / "aidee-overview" / "plugin.yaml").write_text(
+                "name: aidee-overview\n"
+            )
+            runtime = state_root / "runtime/assistants/pilot/data"
+            runtime.mkdir(parents=True)
+            (runtime / "config.yaml").write_text(
+                yaml.safe_dump(
+                    {
+                        "plugins": {
+                            "enabled": [
+                                "aidee-onboarding",
+                                "aidee-assistant-home",
+                            ],
+                            "disabled": ["observability/langfuse"],
+                        }
+                    }
+                )
+            )
+            (runtime / "plugins" / "aidee-onboarding").mkdir(parents=True)
+            (runtime / "plugins" / "aidee-onboarding" / "plugin.yaml").write_text(
+                "name: aidee-onboarding\n"
+            )
+            images = state_root / "images"
+            images.mkdir()
+            (images / f"{RELEASE}.json").write_text(
+                json.dumps(
+                    {
+                        "aidee_version": RELEASE,
+                        "validation": "validated",
+                        "opencode_version": "1.18.3",
+                    }
+                )
+            )
+            with (
+                mock.patch.object(aidee_admin, "STATE_ROOT", state_root),
+                mock.patch.object(aidee_admin, "SOURCE_ROOT", ROOT),
+                mock.patch.object(aidee_admin, "IMAGE_RECORD_ROOT", images),
+                mock.patch.object(
+                    aidee_admin,
+                    "probe_assistant_live",
+                    return_value={
+                        "health_status": "healthy",
+                        "running": True,
+                        "image_version": RELEASE,
+                        "usage": {"cpu_percent": 1.0, "memory_mb": 128},
+                        "error": None,
+                    },
+                ),
+            ):
+                result = aidee_admin.fleet_overview()
+            controller_view = result["controller"]
+            self.assertEqual(controller_view["langfuse"]["status"], "enabled")
+            self.assertIsNone(controller_view["langfuse"]["reason"])
+            self.assertEqual(controller_view["langfuse"]["environment"], "controller")
+            self.assertEqual(controller_view["langfuse"]["source"], "controller")
+            controller_tools = {
+                item["name"]: item for item in controller_view["tools"]
+            }
+            self.assertTrue(controller_tools["observability/langfuse"]["enabled"])
+            self.assertTrue(controller_tools["aidee-overview"]["present"])
+            card = result["assistants"][0]
+            self.assertEqual(card["langfuse"]["status"], "disabled")
+            tools = {item["name"]: item for item in card["tools"]}
+            self.assertTrue(tools["opencode"]["present"])
+            self.assertTrue(tools["opencode"]["enabled"])
+            self.assertFalse(tools["observability/langfuse"]["enabled"])
+            self.assertTrue(tools["aidee-onboarding"]["enabled"])
+            dumped = json.dumps(result)
+            self.assertNotIn("pk-lf-test-public", dumped)
+            self.assertNotIn("sk-lf-test-secret", dumped)
+            self.assertNotIn("HERMES_LANGFUSE_SECRET_KEY", dumped)
+            assert_public_payload(self, result)
+
+    def test_langfuse_unknown_when_plugin_enabled_without_keys(self):
+        status = aidee_admin.inspect_hermes_runtime
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "config.yaml").write_text(
+                yaml.safe_dump({"plugins": {"enabled": ["observability/langfuse"]}})
+            )
+            missing = status(
+                config_path=root / "config.yaml",
+                env_path=root / ".env",
+                plugins_dirs=[],
+            )
+            self.assertEqual(missing["langfuse"]["status"], "unknown")
+            self.assertIn("missing", missing["langfuse"]["reason"])
+            (root / ".env").write_text("HERMES_LANGFUSE_PUBLIC_KEY=\n")
+            empty = status(
+                config_path=root / "config.yaml",
+                env_path=root / ".env",
+                plugins_dirs=[],
+            )
+            self.assertEqual(empty["langfuse"]["status"], "unknown")
+            self.assertIn("keys are not set", empty["langfuse"]["reason"])
+            absent = status(
+                config_path=root / "missing.yaml",
+                env_path=root / ".env",
+                plugins_dirs=[],
+            )
+            self.assertEqual(absent["langfuse"]["status"], "unknown")
+            self.assertIn("missing", absent["langfuse"]["reason"])
+
+    def test_assistant_home_reports_runtime_status_without_secrets(self):
+        spec = importlib.util.spec_from_file_location(
+            "assistant_home_api",
+            ROOT
+            / "platform/dashboard-plugins/aidee-assistant-home/dashboard/plugin_api.py",
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "aidee").mkdir()
+            (root / "memories").mkdir()
+            (root / "plugins" / "aidee-assistant-home").mkdir(parents=True)
+            (root / "aidee/profile.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "id": "pilot",
+                        "name": "Pilot",
+                        "kind": "coding",
+                        "purpose": "Ship code",
+                        "projects": [],
+                        "capabilities": ["coding"],
+                    }
+                )
+            )
+            (root / "config.yaml").write_text(
+                yaml.safe_dump(
+                    {
+                        "plugins": {
+                            "enabled": [
+                                "observability/langfuse",
+                                "aidee-assistant-home",
+                            ]
+                        }
+                    }
+                )
+            )
+            (root / ".env").write_text(
+                "HERMES_LANGFUSE_PUBLIC_KEY=pk-lf-home-public\n"
+                "LANGFUSE_SECRET_KEY=sk-lf-home-secret\n"
+                "HERMES_LANGFUSE_ENV=pilot\n"
+            )
+            (root / "plugins" / "aidee-assistant-home" / "plugin.yaml").write_text(
+                "name: aidee-assistant-home\n"
+            )
+            (root / "skills" / "autonomous-ai-agents" / "opencode").mkdir(parents=True)
+            (root / "skills" / "autonomous-ai-agents" / "opencode" / "SKILL.md").write_text(
+                "name: opencode\n"
+            )
+            (root / "memories/USER.md").write_text("# User\n")
+            (root / "memories/MEMORY.md").write_text("# Memory\n")
+            (root / "aidee/onboarding-status.json").write_text(
+                json.dumps(
+                    {
+                        "rollup": {
+                            "status": "complete",
+                            "incomplete_required": [],
+                            "incomplete_optional": [],
+                            "complete": True,
+                        },
+                        "password": "hidden",
+                    }
+                )
+            )
+            home = module.load_home(root)
+            self.assertEqual(home["langfuse"]["status"], "enabled")
+            self.assertEqual(home["langfuse"]["environment"], "pilot")
+            self.assertEqual(home["langfuse"]["source"], "controller")
+            self.assertEqual(home["onboarding"]["status"], "complete")
+            self.assertIsNone(home["onboarding"]["error"])
+            tools = {item["name"]: item for item in home["tools"]}
+            self.assertTrue(tools["opencode"]["present"])
+            self.assertTrue(tools["aidee-assistant-home"]["enabled"])
+            dumped = json.dumps(home)
+            self.assertNotIn("pk-lf-home-public", dumped)
+            self.assertNotIn("sk-lf-home-secret", dumped)
+            self.assertNotIn("SECRETS.md", dumped)
+            self.assertNotIn("hidden", dumped)
+            self.assertTrue(home["langfuse"]["keys_set"])
+            self.assertFalse(home["langfuse"].get("host_set"))
+
+
+class LangfuseOpencodeWriteTests(unittest.TestCase):
+    def write_registry(self, state_root, assistants=None):
+        fleet = state_root / "fleet"
+        fleet.mkdir(parents=True, exist_ok=True)
+        registry = {
+            "schema_version": 1,
+            "platform": {
+                "repository": "https://example.com/aidee.git",
+                "default_version": "0.1.0",
+                "desired_release": RELEASE,
+            },
+            "controller": {"id": "aidee-controller", "state_path": "controller"},
+            "assistants": assistants or [],
+        }
+        (fleet / "registry.yaml").write_text(yaml.safe_dump(registry, sort_keys=False))
+
+    def patch_writes(self, state_root):
+        return (
+            mock.patch.object(aidee_admin, "STATE_ROOT", state_root),
+            mock.patch.object(aidee_admin, "SOURCE_ROOT", ROOT),
+            mock.patch.object(
+                aidee_admin,
+                "controller_identity",
+                return_value=(os.getuid(), os.getgid()),
+            ),
+            mock.patch.object(aidee_admin.os, "chown"),
+            mock.patch.object(
+                aidee_admin, "schedule_controller_restart", return_value=True
+            ),
+            mock.patch.object(aidee_admin, "restart_assistant_containers"),
+        )
+
+    def test_controller_langfuse_enable_writes_env_without_returning_keys(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state_root = Path(temporary)
+            self.write_registry(state_root)
+            home = state_root / "controller-home" / ".hermes"
+            home.mkdir(parents=True)
+            (home / "config.yaml").write_text(yaml.safe_dump({"plugins": {"enabled": []}}))
+            (home / ".env").write_text("MODEL=keep\n")
+            request = {
+                "schema_version": 1,
+                "request_id": "set-controller-langfuse",
+                "owner_approved": True,
+                "operation": "set_controller_langfuse",
+                "enabled": True,
+                "public_key": "pk-lf-controller-public",
+                "secret_key": "sk-lf-controller-secret",
+                "base_url": "https://cloud.langfuse.com",
+            }
+            patches = self.patch_writes(state_root)
+            with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5]:
+                aidee_admin.validate_request(request)
+                result = aidee_admin.set_controller_langfuse(request)
+            env_text = (home / ".env").read_text()
+            config = yaml.safe_load((home / "config.yaml").read_text())
+            self.assertIn("HERMES_LANGFUSE_PUBLIC_KEY=pk-lf-controller-public", env_text)
+            self.assertIn("HERMES_LANGFUSE_SECRET_KEY=sk-lf-controller-secret", env_text)
+            self.assertIn("HERMES_LANGFUSE_ENV=controller", env_text)
+            self.assertIn("observability/langfuse", config["plugins"]["enabled"])
+            self.assertEqual(result["langfuse"]["status"], "enabled")
+            self.assertEqual(result["langfuse"]["environment"], "controller")
+            self.assertTrue(result["langfuse"]["keys_set"])
+            dumped = json.dumps(result)
+            self.assertNotIn("pk-lf-controller-public", dumped)
+            self.assertNotIn("sk-lf-controller-secret", dumped)
+            overview = aidee_admin.inspect_hermes_runtime(
+                config_path=home / "config.yaml",
+                env_path=home / ".env",
+            )
+            self.assertNotIn("pk-lf-controller-public", json.dumps(overview))
+
+    def test_controller_langfuse_rejects_credential_url_and_disable_keeps_keys(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state_root = Path(temporary)
+            self.write_registry(state_root)
+            home = state_root / "controller-home" / ".hermes"
+            home.mkdir(parents=True)
+            (home / "config.yaml").write_text(
+                yaml.safe_dump({"plugins": {"enabled": ["observability/langfuse"]}})
+            )
+            (home / ".env").write_text(
+                "HERMES_LANGFUSE_PUBLIC_KEY=pk-lf-keep\n"
+                "HERMES_LANGFUSE_SECRET_KEY=sk-lf-keep\n"
+            )
+            bad = {
+                "schema_version": 1,
+                "request_id": "bad-langfuse-url",
+                "owner_approved": True,
+                "operation": "set_controller_langfuse",
+                "enabled": True,
+                "public_key": "pk-lf-controller-public",
+                "secret_key": "sk-lf-controller-secret",
+                "base_url": "https://user:pass@cloud.langfuse.com",
+            }
+            disable = {
+                "schema_version": 1,
+                "request_id": "disable-controller-langfuse",
+                "owner_approved": True,
+                "operation": "set_controller_langfuse",
+                "enabled": False,
+            }
+            patches = self.patch_writes(state_root)
+            with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5]:
+                with self.assertRaises(aidee_admin.AdminError):
+                    aidee_admin.validate_request(bad)
+                aidee_admin.validate_request(disable)
+                result = aidee_admin.set_controller_langfuse(disable)
+            env_text = (home / ".env").read_text()
+            self.assertIn("HERMES_LANGFUSE_SECRET_KEY=sk-lf-keep", env_text)
+            self.assertFalse(
+                any(line.startswith("HERMES_LANGFUSE_ENV=") for line in env_text.splitlines())
+            )
+            self.assertEqual(result["langfuse"]["status"], "disabled")
+            self.assertTrue(result["langfuse"]["keys_set"])
+            self.assertNotIn("sk-lf-keep", json.dumps(result))
+
+    def test_langfuse_admin_record_hashes_keys(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state_root = Path(temporary)
+            self.write_registry(state_root)
+            records = state_root / "runtime" / "admin-requests"
+            records.mkdir(parents=True)
+            home = state_root / "controller-home" / ".hermes"
+            home.mkdir(parents=True)
+            (home / "config.yaml").write_text("{}\n")
+            request = {
+                "schema_version": 1,
+                "request_id": "hash-langfuse-keys",
+                "owner_approved": True,
+                "operation": "set_controller_langfuse",
+                "enabled": True,
+                "public_key": "pk-lf-hashed-public",
+                "secret_key": "sk-lf-hashed-secret",
+            }
+            patches = self.patch_writes(state_root)
+            with (
+                patches[0],
+                patches[1],
+                patches[2],
+                patches[3],
+                patches[4],
+                patches[5],
+                mock.patch.object(
+                    aidee_admin,
+                    "controller_identity",
+                    return_value=(os.getuid(), os.getgid()),
+                ),
+            ):
+                result = aidee_admin.execute_idempotent(request)
+                again = aidee_admin.execute_idempotent(request)
+            self.assertEqual(result, again)
+            stored = json.loads((records / "hash-langfuse-keys.json").read_text())
+            self.assertTrue(stored["request"]["secret_key"].startswith("sha256:"))
+            self.assertNotIn("sk-lf-hashed-secret", json.dumps(stored))
+
+    def test_controller_langfuse_write_is_inherited_with_unique_environments(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state_root = Path(temporary)
+            self.write_registry(
+                state_root,
+                [
+                    {
+                        "id": "pilot",
+                        "name": "Pilot",
+                        "kind": "coding",
+                        "status": "active",
+                        "image": {"aidee_version": RELEASE},
+                    },
+                    {
+                        "id": "idle",
+                        "name": "Idle",
+                        "kind": "personal",
+                        "status": "active",
+                        "image": {"aidee_version": RELEASE},
+                    },
+                ],
+            )
+            home = state_root / "controller-home" / ".hermes"
+            home.mkdir(parents=True)
+            (home / "config.yaml").write_text(yaml.safe_dump({"plugins": {"enabled": []}}))
+            (home / ".env").write_text("MODEL=keep\n")
+            controller_soul = state_root / "fleet/controller/SOUL.md"
+            controller_soul.parent.mkdir(parents=True)
+            controller_soul.write_text("# Aidee controller\n\nYou operate Aidee.\n")
+            images = state_root / "images"
+            images.mkdir()
+            (images / f"{RELEASE}.json").write_text(
+                json.dumps(
+                    {
+                        "aidee_version": RELEASE,
+                        "validation": "validated",
+                        "opencode_version": "1.18.3",
+                    }
+                )
+            )
+            runtimes = {}
+            for assistant_id in ("pilot", "idle"):
+                runtime = state_root / f"runtime/assistants/{assistant_id}/data"
+                runtime.mkdir(parents=True)
+                (runtime / "config.yaml").write_text("{}\n")
+                (runtime / ".env").write_text("MODEL=keep\n")
+                (runtime / "SOUL.md").write_text(f"# {assistant_id}\n")
+                fleet = state_root / f"fleet/assistants/{assistant_id}"
+                fleet.mkdir(parents=True)
+                (fleet / "SOUL.md").write_text(f"# {assistant_id}\n")
+                runtimes[assistant_id] = runtime
+            enable = {
+                "schema_version": 1,
+                "request_id": "set-controller-langfuse-inherit",
+                "owner_approved": True,
+                "operation": "set_controller_langfuse",
+                "enabled": True,
+                "public_key": "pk-lf-install-public",
+                "secret_key": "sk-lf-install-secret",
+                "base_url": "https://cloud.langfuse.com",
+            }
+            install = {
+                "schema_version": 1,
+                "request_id": "install-assistant-opencode",
+                "owner_approved": True,
+                "operation": "set_assistant_opencode",
+                "assistant_id": "pilot",
+                "action": "install",
+            }
+            uninstall = {
+                "schema_version": 1,
+                "request_id": "set-assistant-opencode",
+                "owner_approved": True,
+                "operation": "set_assistant_opencode",
+                "assistant_id": "pilot",
+                "action": "uninstall",
+            }
+            disable = {
+                "schema_version": 1,
+                "request_id": "disable-controller-langfuse",
+                "owner_approved": True,
+                "operation": "set_controller_langfuse",
+                "enabled": False,
+            }
+            inherit = {
+                "schema_version": 1,
+                "request_id": "inherit-pilot-langfuse",
+                "owner_approved": True,
+                "operation": "set_assistant_langfuse",
+                "assistant_id": "pilot",
+            }
+            patches = self.patch_writes(state_root)
+            with (
+                patches[0],
+                patches[1],
+                patches[2],
+                patches[3],
+                patches[4],
+                patches[5],
+                mock.patch.object(aidee_admin, "IMAGE_RECORD_ROOT", images),
+            ):
+                aidee_admin.validate_request(enable)
+                langfuse = aidee_admin.set_controller_langfuse(enable)
+                aidee_admin.validate_request(inherit)
+                inherited = aidee_admin.set_assistant_langfuse(inherit)
+                aidee_admin.validate_request(install)
+                installed = aidee_admin.set_assistant_opencode(install)
+                controller_env = (home / ".env").read_text()
+                self.assertIn("HERMES_LANGFUSE_ENV=controller", controller_env)
+                self.assertIn("HERMES_LANGFUSE_SECRET_KEY=sk-lf-install-secret", controller_env)
+                environments = set()
+                for assistant_id, runtime in runtimes.items():
+                    env_text = (runtime / ".env").read_text()
+                    self.assertIn("HERMES_LANGFUSE_PUBLIC_KEY=pk-lf-install-public", env_text)
+                    self.assertIn(f"HERMES_LANGFUSE_ENV={assistant_id}", env_text)
+                    self.assertIn("AIDEE:AIDEE-AGENT-TRACING:BEGIN", (runtime / "SOUL.md").read_text())
+                    environments.add(assistant_id)
+                    config = yaml.safe_load((runtime / "config.yaml").read_text())
+                    self.assertIn("observability/langfuse", config["plugins"]["enabled"])
+                self.assertEqual(environments, {"pilot", "idle"})
+                env_enabled = (runtimes["pilot"] / ".env").read_text()
+                self.assertIn("LANGFUSE_PUBLIC_KEY=pk-lf-install-public", env_enabled)
+                self.assertIn("LANGFUSE_ENVIRONMENT=pilot", env_enabled)
+                self.assertIn("LANGFUSE_BASEURL=https://cloud.langfuse.com", env_enabled)
+                self.assertNotIn("OTEL_EXPORTER_OTLP_ENDPOINT=", env_enabled)
+                credentials_path = (
+                    runtimes["pilot"] / ".config/opencode/opencode-langfuse.json"
+                )
+                config_path = runtimes["pilot"] / ".config/opencode/opencode.json"
+                self.assertEqual(
+                    aidee_admin.assistant_opencode_config_path(runtimes["pilot"]),
+                    config_path,
+                )
+                self.assertEqual(
+                    aidee_admin.ASSISTANT_CONTAINER_HOME, Path("/opt/data")
+                )
+                self.assertTrue(credentials_path.is_file())
+                self.assertEqual(stat.S_IMODE(credentials_path.stat().st_mode), 0o600)
+                credentials = json.loads(credentials_path.read_text())
+                self.assertEqual(
+                    credentials,
+                    {
+                        "publicKey": "pk-lf-install-public",
+                        "secretKey": "sk-lf-install-secret",
+                        "baseUrl": "https://cloud.langfuse.com",
+                        "environment": "pilot",
+                    },
+                )
+                opencode_config = json.loads(config_path.read_text())
+                self.assertTrue(opencode_config["experimental"]["openTelemetry"])
+                self.assertIn(
+                    "@langfuse/opencode-observability-plugin@latest",
+                    opencode_config["plugin"],
+                )
+                self.assertIn(
+                    "AIDEE:OPENCODE-DELEGATION:BEGIN",
+                    (runtimes["pilot"] / "SOUL.md").read_text(),
+                )
+                self.assertIn("delegate coding to OpenCode", installed["note"])
+                self.assertIn(
+                    "AIDEE:AIDEE-AGENT-TRACING:BEGIN",
+                    controller_soul.read_text(),
+                )
+                aidee_admin.validate_request(uninstall)
+                opencode = aidee_admin.set_assistant_opencode(uninstall)
+                env_disabled = (runtimes["pilot"] / ".env").read_text()
+                self.assertIn("HERMES_LANGFUSE_SECRET_KEY=sk-lf-install-secret", env_disabled)
+                self.assertIn("HERMES_LANGFUSE_ENV=pilot", env_disabled)
+                self.assertFalse(
+                    any(
+                        line.startswith("LANGFUSE_PUBLIC_KEY=")
+                        for line in env_disabled.splitlines()
+                    )
+                )
+                self.assertFalse(credentials_path.exists())
+                self.assertNotIn(
+                    "AIDEE:OPENCODE-DELEGATION:BEGIN",
+                    (runtimes["pilot"] / "SOUL.md").read_text(),
+                )
+                desired = json.loads((runtimes["pilot"] / "aidee/opencode.json").read_text())
+                self.assertEqual(desired["desired"], "absent")
+                tools = {item["name"]: item for item in opencode["tools"]}
+                self.assertTrue(tools["opencode"]["present"])
+                self.assertFalse(tools["opencode"]["enabled"])
+                aidee_admin.validate_request(install)
+                aidee_admin.set_assistant_opencode(install)
+                aidee_admin.validate_request(disable)
+                aidee_admin.set_controller_langfuse(disable)
+                env_no_trace = (runtimes["pilot"] / ".env").read_text()
+                self.assertFalse(
+                    (runtimes["pilot"] / ".config/opencode/opencode-langfuse.json").exists()
+                )
+                self.assertNotIn("HERMES_LANGFUSE_SECRET_KEY=", env_no_trace)
+                self.assertNotIn("HERMES_LANGFUSE_ENV=", env_no_trace)
+                self.assertNotIn(
+                    "AIDEE:AIDEE-AGENT-TRACING:BEGIN",
+                    (runtimes["pilot"] / "SOUL.md").read_text(),
+                )
+                self.assertIn(
+                    "AIDEE:OPENCODE-DELEGATION:BEGIN",
+                    (runtimes["pilot"] / "SOUL.md").read_text(),
+                )
+                self.assertIn("HERMES_LANGFUSE_SECRET_KEY=sk-lf-install-secret", (home / ".env").read_text())
+                self.assertNotIn(
+                    "AIDEE:AIDEE-AGENT-TRACING:BEGIN",
+                    controller_soul.read_text(),
+                )
+            self.assertEqual(langfuse["langfuse"]["status"], "enabled")
+            self.assertEqual(inherited["langfuse"]["environment"], "pilot")
+            dumped = json.dumps(langfuse) + json.dumps(inherited) + json.dumps(installed)
+            self.assertNotIn("sk-lf-install-secret", dumped)
+            self.assertNotIn("pk-lf-install-public", dumped)
+            self.assertIn("stays in the assistant image", opencode["note"])
+            self.assertIn("coding-delegation instruction", opencode["note"])
+
+    def test_controller_opencode_installs_pinned_package(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state_root = Path(temporary)
+            self.write_registry(state_root)
+            home = state_root / "controller-home" / ".hermes"
+            node = home / "node" / "bin"
+            node.mkdir(parents=True)
+            npm = node / "npm"
+            npm.write_text("#!/bin/sh\n")
+            npm.chmod(0o755)
+            commands = []
+
+            def fake_run(command):
+                commands.append(command)
+                return ""
+
+            patches = self.patch_writes(state_root)
+            request = {
+                "schema_version": 1,
+                "request_id": "install-controller-opencode",
+                "owner_approved": True,
+                "operation": "set_controller_opencode",
+                "action": "install",
+            }
+            with (
+                patches[0],
+                patches[1],
+                patches[2],
+                patches[3],
+                patches[4],
+                patches[5],
+                mock.patch.object(aidee_admin, "run", side_effect=fake_run),
+                mock.patch.object(aidee_admin.shutil, "which", return_value=None),
+            ):
+                aidee_admin.validate_request(request)
+                result = aidee_admin.set_controller_opencode(request)
+            npm_command = commands[0]
+            self.assertEqual(npm_command[0], "runuser")
+            self.assertIn("install", npm_command)
+            self.assertIn("opencode-ai@1.18.3", npm_command)
+            self.assertTrue((state_root / "fleet/controller/opencode.json").is_file())
+            self.assertIn("1.18.3", result["note"])
+            self.assertTrue(result["restarted"])
+            self.assertIn("gateway will restart", result["next_action"])
+            self.assertTrue((home / "skills/opencode/SKILL.md").is_file())
+            self.assertIn("Delegate that work to OpenCode", (home / "skills/opencode/SKILL.md").read_text())
+
+    def test_assistant_home_cannot_write_install_langfuse_keys(self):
+        spec = importlib.util.spec_from_file_location(
+            "assistant_home_api",
+            ROOT
+            / "platform/dashboard-plugins/aidee-assistant-home/dashboard/plugin_api.py",
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "config.yaml").write_text(
+                yaml.safe_dump({"plugins": {"enabled": ["observability/langfuse"]}})
+            )
+            (root / ".env").write_text(
+                "HERMES_LANGFUSE_PUBLIC_KEY=pk-lf-local-public\n"
+                "HERMES_LANGFUSE_SECRET_KEY=sk-lf-local-secret\n"
+                "HERMES_LANGFUSE_BASE_URL=https://cloud.langfuse.com\n"
+                "HERMES_LANGFUSE_ENV=pilot\n"
+            )
+            (root / "aidee").mkdir()
+            (root / "aidee/profile.json").write_text(
+                json.dumps({"schema_version": 1, "id": "pilot", "name": "Pilot"})
+            )
+            with self.assertRaisesRegex(ValueError, "controller dashboard"):
+                module.save_langfuse(
+                    root,
+                    {
+                        "enabled": True,
+                        "public_key": "pk-lf-other-public",
+                        "secret_key": "sk-lf-other-secret",
+                        "base_url": "https://cloud.langfuse.com",
+                    },
+                )
+            self.assertIn(
+                "HERMES_LANGFUSE_SECRET_KEY=sk-lf-local-secret",
+                (root / ".env").read_text(),
+            )
+            with self.assertRaisesRegex(ValueError, "does not include OpenCode"):
+                module.save_opencode(root, {"action": "install"})
+            (root / "skills/autonomous-ai-agents/opencode").mkdir(parents=True)
+            (root / "skills/autonomous-ai-agents/opencode/SKILL.md").write_text(
+                "name: opencode\n"
+            )
+            (root / "SOUL.md").write_text("# Pilot\n\nYou are Pilot.\n")
+            enabled = module.save_opencode(root, {"action": "install"})
+            self.assertEqual(enabled["status"], "updated")
+            soul = (root / "SOUL.md").read_text()
+            self.assertIn("AIDEE:OPENCODE-DELEGATION:BEGIN", soul)
+            self.assertIn("do not write or edit the code yourself", soul)
+            env_text = (root / ".env").read_text()
+            self.assertIn("HERMES_LANGFUSE_PUBLIC_KEY=pk-lf-local-public", env_text)
+            self.assertIn("LANGFUSE_PUBLIC_KEY=pk-lf-local-public", env_text)
+            self.assertIn("LANGFUSE_ENVIRONMENT=pilot", env_text)
+            self.assertIn("LANGFUSE_BASEURL=https://cloud.langfuse.com", env_text)
+            self.assertNotIn("OTEL_EXPORTER_OTLP_ENDPOINT=", env_text)
+            self.assertNotIn("OPENCODE_CONFIG=", env_text)
+            credentials_path = root / ".config/opencode/opencode-langfuse.json"
+            self.assertTrue(credentials_path.is_file())
+            self.assertEqual(stat.S_IMODE(credentials_path.stat().st_mode), 0o600)
+            credentials = json.loads(credentials_path.read_text())
+            self.assertEqual(
+                credentials,
+                {
+                    "publicKey": "pk-lf-local-public",
+                    "secretKey": "sk-lf-local-secret",
+                    "baseUrl": "https://cloud.langfuse.com",
+                    "environment": "pilot",
+                },
+            )
+            self.assertNotIn("sk-lf-local-secret", json.dumps(enabled))
+            home_payload = module.load_home(root)
+            dumped_home = json.dumps(home_payload)
+            self.assertNotIn("sk-lf-local-secret", dumped_home)
+            self.assertNotIn("pk-lf-local-public", dumped_home)
+            disabled = module.save_opencode(root, {"action": "uninstall"})
+            self.assertIn("stays in the assistant image", disabled["note"])
+            self.assertNotIn(
+                "AIDEE:OPENCODE-DELEGATION:BEGIN", (root / "SOUL.md").read_text()
+            )
+            self.assertFalse(credentials_path.exists())
+            env_after = (root / ".env").read_text()
+            self.assertIn("HERMES_LANGFUSE_SECRET_KEY=sk-lf-local-secret", env_after)
+            self.assertIn("HERMES_LANGFUSE_ENV=pilot", env_after)
+            self.assertNotIn("OTEL_EXPORTER_OTLP_ENDPOINT=", env_after)
+            self.assertFalse(
+                any(line.startswith("LANGFUSE_PUBLIC_KEY=") for line in env_after.splitlines())
+            )
+
+    def test_opencode_instruction_markers_and_langfuse_env_mapping(self):
+        soul = "# Pilot\n\nYou are Pilot.\n"
+        enabled = aidee_admin.apply_opencode_instruction(soul, True)
+        self.assertIn("AIDEE:OPENCODE-DELEGATION:BEGIN", enabled)
+        self.assertIn("do not write or edit the code yourself", enabled)
+        self.assertTrue(enabled.startswith("# Pilot\n"))
+        disabled = aidee_admin.apply_opencode_instruction(enabled, False)
+        self.assertEqual(disabled, soul)
+        env = (
+            "HERMES_LANGFUSE_PUBLIC_KEY=pk-lf-map\n"
+            "HERMES_LANGFUSE_SECRET_KEY=sk-lf-map\n"
+            "HERMES_LANGFUSE_BASE_URL=https://cloud.langfuse.com\n"
+            "HERMES_LANGFUSE_ENV=controller\n"
+        )
+        stale = env + (
+            "OTEL_EXPORTER_OTLP_ENDPOINT=https://cloud.langfuse.com/api/public/otel\n"
+            "OPENCODE_CONFIG=/opt/data/.config/opencode/opencode.json\n"
+        )
+        mapped = aidee_admin.apply_opencode_langfuse_env(
+            stale, "/opt/data/.config/opencode/opencode.json"
+        )
+        self.assertIn("LANGFUSE_PUBLIC_KEY=pk-lf-map", mapped)
+        self.assertIn("LANGFUSE_SECRET_KEY=sk-lf-map", mapped)
+        self.assertIn("LANGFUSE_ENVIRONMENT=controller", mapped)
+        self.assertIn("LANGFUSE_BASEURL=https://cloud.langfuse.com", mapped)
+        self.assertNotIn("OTEL_EXPORTER_OTLP_ENDPOINT=", mapped)
+        self.assertNotIn("OPENCODE_CONFIG=", mapped)
+        credentials = aidee_admin.opencode_langfuse_credentials_document(
+            mapped, environment="controller"
+        )
+        self.assertEqual(
+            credentials,
+            {
+                "publicKey": "pk-lf-map",
+                "secretKey": "sk-lf-map",
+                "baseUrl": "https://cloud.langfuse.com",
+                "environment": "controller",
+            },
+        )
+        runtime = Path("/var/lib/aidee/runtime/assistants/pilot/data")
+        self.assertEqual(
+            aidee_admin.assistant_opencode_host_dir(runtime),
+            runtime / ".config/opencode",
+        )
+        self.assertEqual(
+            aidee_admin.assistant_opencode_host_dir(runtime, "/opt/data"),
+            runtime / ".config/opencode",
+        )
+        self.assertEqual(
+            aidee_admin.assistant_opencode_host_dir(runtime, "/opt/data/user"),
+            runtime / "user/.config/opencode",
+        )
+        stripped = aidee_admin.strip_opencode_langfuse_env(mapped)
+        self.assertIn("HERMES_LANGFUSE_SECRET_KEY=sk-lf-map", stripped)
+        self.assertFalse(
+            any(line.startswith("LANGFUSE_PUBLIC_KEY=") for line in stripped.splitlines())
+        )
+        self.assertNotIn("OTEL_EXPORTER_OTLP_ENDPOINT=", stripped)
+        fallback = "LANGFUSE_PUBLIC_KEY=pk-lf-only\nLANGFUSE_SECRET_KEY=sk-lf-only\n"
+        kept = aidee_admin.strip_opencode_langfuse_env(fallback)
+        self.assertIn("LANGFUSE_PUBLIC_KEY=pk-lf-only", kept)
+        self.assertIn("LANGFUSE_SECRET_KEY=sk-lf-only", kept)
+        traced = aidee_admin.apply_tracing_instruction(soul, True)
+        self.assertIn("AIDEE:AIDEE-AGENT-TRACING:BEGIN", traced)
+        self.assertIn("Aidee agent tracing", traced)
+        self.assertEqual(aidee_admin.apply_tracing_instruction(traced, False), soul)
+        config, next_env = aidee_admin.apply_langfuse_settings(
+            {},
+            "MODEL=keep\n",
+            enabled=True,
+            public_key="pk-lf-both",
+            secret_key="sk-lf-both",
+            base_url="https://cloud.langfuse.com",
+            environment="controller",
+            opencode_enabled=True,
+        )
+        self.assertIn("observability/langfuse", config["plugins"]["enabled"])
+        self.assertIn("LANGFUSE_PUBLIC_KEY=pk-lf-both", next_env)
+        self.assertIn("LANGFUSE_ENVIRONMENT=controller", next_env)
+        self.assertIn("HERMES_LANGFUSE_ENV=controller", next_env)
+        self.assertIn("HERMES_LANGFUSE_SECRET_KEY=sk-lf-both", next_env)
+        off_config, off_env = aidee_admin.apply_langfuse_settings(
+            config,
+            next_env,
+            enabled=False,
+            opencode_enabled=True,
+        )
+        self.assertIn("observability/langfuse", off_config["plugins"]["disabled"])
+        self.assertIn("HERMES_LANGFUSE_SECRET_KEY=sk-lf-both", off_env)
+        self.assertNotIn("OTEL_EXPORTER_OTLP_ENDPOINT=", off_env)
+
+    def test_controller_opencode_writes_soul_and_langfuse_env(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state_root = Path(temporary)
+            self.write_registry(state_root)
+            home = state_root / "controller-home" / ".hermes"
+            node = home / "node" / "bin"
+            node.mkdir(parents=True)
+            npm = node / "npm"
+            npm.write_text("#!/bin/sh\n")
+            npm.chmod(0o755)
+            (home / "config.yaml").write_text(
+                yaml.safe_dump({"plugins": {"enabled": ["observability/langfuse"]}})
+            )
+            (home / ".env").write_text(
+                "HERMES_LANGFUSE_PUBLIC_KEY=pk-lf-controller-public\n"
+                "HERMES_LANGFUSE_SECRET_KEY=sk-lf-controller-secret\n"
+                "HERMES_LANGFUSE_BASE_URL=https://cloud.langfuse.com\n"
+            )
+            soul = state_root / "fleet/controller/SOUL.md"
+            soul.parent.mkdir(parents=True)
+            soul.write_text("# Aidee controller\n\nYou operate Aidee.\n")
+            commands = []
+
+            def fake_run(command):
+                commands.append(command)
+                return ""
+
+            patches = self.patch_writes(state_root)
+            request = {
+                "schema_version": 1,
+                "request_id": "install-controller-opencode-soul",
+                "owner_approved": True,
+                "operation": "set_controller_opencode",
+                "action": "install",
+            }
+            restart = mock.Mock(return_value=True)
+            with (
+                patches[0],
+                patches[1],
+                patches[2],
+                patches[3],
+                patches[5],
+                mock.patch.object(aidee_admin, "schedule_controller_restart", restart),
+                mock.patch.object(
+                    aidee_admin,
+                    "controller_home_dir",
+                    return_value=state_root / "controller-home",
+                ),
+                mock.patch.object(aidee_admin, "run", side_effect=fake_run),
+                mock.patch.object(
+                    aidee_admin.shutil, "which", return_value="/usr/bin/opencode"
+                ),
+            ):
+                result = aidee_admin.set_controller_opencode(request)
+            self.assertIn("opencode-ai@1.18.3", commands[0])
+            self.assertIn("AIDEE:OPENCODE-DELEGATION:BEGIN", soul.read_text())
+            env_text = (home / ".env").read_text()
+            self.assertIn("LANGFUSE_PUBLIC_KEY=pk-lf-controller-public", env_text)
+            self.assertIn("HERMES_LANGFUSE_SECRET_KEY=sk-lf-controller-secret", env_text)
+            self.assertNotIn("sk-lf-controller-secret", json.dumps(result))
+            self.assertTrue(result["restarted"])
+            restart.assert_called_once()
+            credentials_path = (
+                state_root / "controller-home/.config/opencode/opencode-langfuse.json"
+            )
+            config_path = state_root / "controller-home/.config/opencode/opencode.json"
+            self.assertTrue(credentials_path.is_file())
+            self.assertEqual(stat.S_IMODE(credentials_path.stat().st_mode), 0o600)
+            self.assertEqual(
+                json.loads(credentials_path.read_text()),
+                {
+                    "publicKey": "pk-lf-controller-public",
+                    "secretKey": "sk-lf-controller-secret",
+                    "baseUrl": "https://cloud.langfuse.com",
+                    "environment": "controller",
+                },
+            )
+            self.assertTrue(json.loads(config_path.read_text())["experimental"]["openTelemetry"])
+            overview = aidee_admin.inspect_hermes_runtime(
+                config_path=home / "config.yaml",
+                env_path=home / ".env",
+            )
+            self.assertNotIn("pk-lf-controller-public", json.dumps(overview))
+            self.assertNotIn("sk-lf-controller-secret", json.dumps(overview))
+            uninstall = dict(request)
+            uninstall["request_id"] = "uninstall-controller-opencode-soul"
+            uninstall["action"] = "uninstall"
+            restart.reset_mock()
+            with (
+                patches[0],
+                patches[1],
+                patches[2],
+                patches[3],
+                patches[5],
+                mock.patch.object(aidee_admin, "schedule_controller_restart", restart),
+                mock.patch.object(
+                    aidee_admin,
+                    "controller_home_dir",
+                    return_value=state_root / "controller-home",
+                ),
+                mock.patch.object(aidee_admin, "run", side_effect=fake_run),
+                mock.patch.object(aidee_admin.shutil, "which", return_value=None),
+            ):
+                disabled = aidee_admin.set_controller_opencode(uninstall)
+            self.assertTrue(disabled["restarted"])
+            restart.assert_called_once()
+            self.assertNotIn("AIDEE:OPENCODE-DELEGATION:BEGIN", soul.read_text())
+            env_after = (home / ".env").read_text()
+            self.assertIn("HERMES_LANGFUSE_SECRET_KEY=sk-lf-controller-secret", env_after)
+            self.assertNotIn("OTEL_EXPORTER_OTLP_ENDPOINT=", env_after)
+            self.assertFalse((home / "skills/opencode/SKILL.md").is_file())
+            self.assertFalse(credentials_path.exists())
+
+

@@ -1,0 +1,14 @@
+{
+  "name": "aidee-overview",
+  "label": "Fleet overview",
+  "description": "Host, assistants, and controller Langfuse or OpenCode settings.",
+  "icon": "LayoutDashboard",
+  "version": "0.1.0",
+  "tab": {
+    "path": "/",
+    "override": "/",
+    "position": "start"
+  },
+  "entry": "dist/index.js",
+  "api": "plugin_api.py"
+}

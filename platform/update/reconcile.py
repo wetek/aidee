@@ -453,6 +453,7 @@ def sync_assistant_state(
                 uid=CONTAINER_UID,
                 gid=controller_gid,
                 fleet_uid=controller_uid,
+                state_root=state_root,
             )
         )
         status = json.loads((runtime_dir / ONBOARDING_RELATIVE_PATH).read_text())
@@ -547,6 +548,22 @@ def reconcile_controller_onboarding(candidate, state_root, owner):
     soul = controller_dir / "SOUL.md"
     template = candidate / "fleet-template/controller/SOUL.md.template"
     desired_soul = template.read_text().replace("{{ owner_name }}", owner)
+    sys.path.insert(0, str(candidate / "platform/admin"))
+    from fleet_status import (
+        apply_opencode_instruction,
+        apply_tracing_instruction,
+        load_controller_install_langfuse,
+        load_opencode_desired,
+    )
+
+    desired_soul = apply_opencode_instruction(
+        desired_soul,
+        load_opencode_desired(controller_dir / "opencode.json") == "installed",
+    )
+    desired_soul = apply_tracing_instruction(
+        desired_soul,
+        load_controller_install_langfuse(state_root).get("enabled"),
+    )
     if not soul.is_file() or soul.read_text() != desired_soul:
         atomic_write(soul, desired_soul, 0o640)
     if soul.is_file():
@@ -596,6 +613,7 @@ def create_container_commands(assistant, image_id, state_root, controller_gid):
         "--env", "HERMES_DASHBOARD=1",
         "--env", "HERMES_DASHBOARD_HOST=127.0.0.1",
         "--env", "HERMES_DASHBOARD_PORT=9119",
+        # HOME is unset. The Hermes image user home is /opt/data, same as HERMES_HOME.
         image_id, "gateway", "run",
     ]
     proxy_command = [
@@ -991,6 +1009,8 @@ def verify(
         ONBOARDING_RELATIVE_PATH,
         STEP_STATES,
         build_soul_document,
+        soul_opencode_enabled,
+        soul_tracing_enabled,
     )
     setup_dir = source / "platform/setup"
     if str(setup_dir) not in sys.path:
@@ -1092,6 +1112,12 @@ def verify(
                     failures.append(
                         f"onboarding plugin is not enabled: {assistant_id}"
                     )
+                if "aidee-assistant-home" not in enabled:
+                    failures.append(
+                        f"assistant home plugin is not enabled: {assistant_id}"
+                    )
+                if not (runtime / "aidee/profile.json").is_file():
+                    failures.append(f"assistant profile missing: {assistant_id}")
             except json.JSONDecodeError:
                 failures.append(f"onboarding status invalid: {assistant_id}")
         tools = runner.run(
@@ -1135,6 +1161,34 @@ def verify(
             failures.append(
                 f"onboarding plugin is not installed in Hermes home: {assistant_id}"
             )
+        home_image_plugin = runner.run(
+            [
+                "docker",
+                "exec",
+                name,
+                "test",
+                "-f",
+                "/opt/hermes/plugins/aidee-assistant-home/plugin.yaml",
+            ],
+            check=False,
+        )
+        if home_image_plugin.returncode:
+            failures.append(f"assistant home plugin missing: {assistant_id}")
+        home_user_plugin = runner.run(
+            [
+                "docker",
+                "exec",
+                name,
+                "test",
+                "-f",
+                "/opt/data/plugins/aidee-assistant-home/plugin.yaml",
+            ],
+            check=False,
+        )
+        if home_user_plugin.returncode:
+            failures.append(
+                f"assistant home plugin is not installed in Hermes home: {assistant_id}"
+            )
         fleet_dir = safe_state_path(
             state_root / "fleet",
             assistant.get("state_path") or f"assistants/{assistant_id}",
@@ -1142,7 +1196,10 @@ def verify(
         )
         desired_assistant = resolved_assistant(assistant, fleet_dir)
         if (runtime / "SOUL.md").read_text() != build_soul_document(
-            desired_assistant, owner
+            desired_assistant,
+            owner,
+            opencode_enabled=soul_opencode_enabled(runtime),
+            tracing_enabled=soul_tracing_enabled(runtime),
         ):
             failures.append(f"assistant instructions mismatch: {assistant_id}")
         if not (

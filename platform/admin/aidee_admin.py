@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import hashlib
 import json
 import os
 import pwd
@@ -18,15 +19,53 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from assistant_state import (
     CONTAINER_UID,
-    ONBOARDING_PLUGIN,
+    PROFILE_RELATIVE_PATH,
+    USER_PLUGINS,
+    apply_install_langfuse_files,
     apply_published_dashboard_url,
+    build_assistant_profile,
     build_soul_document,
     dashboard_hostname,
     default_assistant_config,
     default_onboarding_status,
-    install_onboarding_plugin_files,
+    install_assistant_plugins,
     mark_step,
     normalize_dashboard_url,
+)
+from fleet_status import (
+    ASSISTANT_CONTAINER_HOME,
+    CONTROLLER_LANGFUSE_ENVIRONMENT,
+    OPENCODE_CONFIG_RELATIVE,
+    OPENCODE_CREDENTIALS_RELATIVE,
+    OPENCODE_DESIRED_RELATIVE,
+    OPENCODE_PACKAGE,
+    OPENCODE_RUNTIME_SKILL,
+    OPENCODE_SKILL_BODY,
+    OPENCODE_SKILL_PATHS,
+    OPENCODE_VERSION,
+    apply_langfuse_settings,
+    apply_opencode_config,
+    apply_opencode_instruction,
+    apply_opencode_langfuse_env,
+    apply_tracing_instruction,
+    assistant_opencode_host_dir,
+    build_overview,
+    image_has_opencode,
+    inspect_hermes_runtime,
+    langfuse_environment_name,
+    load_controller_install_langfuse,
+    load_opencode_config,
+    load_opencode_desired,
+    opencode_desired_document,
+    opencode_is_enabled,
+    opencode_langfuse_credentials_document,
+    parse_disk_usage,
+    parse_docker_inspect,
+    parse_docker_stats,
+    parse_meminfo,
+    public_payload,
+    strip_opencode_langfuse_env,
+    upsert_env,
 )
 
 
@@ -48,6 +87,8 @@ DASHBOARD_SECRET_KEY = "HERMES_DASHBOARD_BASIC_AUTH_SECRET"
 DASHBOARD_TTL_KEY = "HERMES_DASHBOARD_BASIC_AUTH_TTL_SECONDS"
 DASHBOARD_TTL_SECONDS = 2592000
 DASHBOARD_USERNAME_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9._-]{0,63}$")
+GATEWAY_SERVICE = "hermes-gateway.service"
+HASHED_REQUEST_KEYS = ("public_key", "secret_key", "publicKey", "secretKey")
 
 
 class AdminError(RuntimeError):
@@ -325,7 +366,17 @@ def create_assistant_state(assistant, image_id, dashboard_url):
 
     sync_shared_skills(SOURCE_ROOT, runtime_dir, CONTAINER_UID, controller_gid)
 
-    soul = build_soul_document(assistant, owner_name())
+    image = assistant.get("image") if isinstance(assistant.get("image"), dict) else {}
+    opencode_enabled = image_has_opencode(
+        load_image_record(image.get("aidee_version"))
+    )
+    install_tracing = load_controller_install_langfuse(STATE_ROOT)
+    soul = build_soul_document(
+        assistant,
+        owner_name(),
+        opencode_enabled=opencode_enabled,
+        tracing_enabled=bool(install_tracing.get("enabled")),
+    )
     write_text(
         fleet_dir / "SOUL.md",
         soul,
@@ -380,7 +431,7 @@ def create_assistant_state(assistant, image_id, dashboard_url):
                 "enabled": True,
             }
         },
-        "plugins": {"enabled": [ONBOARDING_PLUGIN]},
+        "plugins": {"enabled": list(USER_PLUGINS)},
     }
     home_channel = controller_telegram_home_channel()
     if home_channel:
@@ -392,8 +443,14 @@ def create_assistant_state(assistant, image_id, dashboard_url):
         CONTAINER_UID,
         controller_gid,
     )
-    install_onboarding_plugin_files(
+    install_assistant_plugins(
         runtime_dir, uid=CONTAINER_UID, gid=controller_gid
+    )
+    write_text(
+        runtime_dir / PROFILE_RELATIVE_PATH,
+        json.dumps(build_assistant_profile(assistant, config), indent=2) + "\n",
+        CONTAINER_UID,
+        controller_gid,
     )
     write_text(
         runtime_dir / "aidee/onboarding-status.json",
@@ -501,6 +558,24 @@ def create_assistant_state(assistant, image_id, dashboard_url):
             0,
             0o600,
         )
+
+    if opencode_enabled:
+        write_opencode_skill(runtime_dir, True, CONTAINER_UID, controller_gid)
+        write_opencode_desired(
+            runtime_dir / OPENCODE_DESIRED_RELATIVE,
+            "installed",
+            CONTAINER_UID,
+            controller_gid,
+        )
+
+    apply_install_langfuse_files(
+        runtime_dir,
+        assistant_id,
+        install_tracing,
+        opencode_enabled=opencode_enabled,
+        uid=CONTAINER_UID,
+        gid=controller_gid,
+    )
 
     ensure_runtime_tree_permissions(runtime_dir, CONTAINER_UID, controller_gid)
     return fleet_dir, runtime_dir, secret_dir
@@ -671,6 +746,8 @@ def create_containers(assistant, image_id, fleet_dir, runtime_dir):
             "HERMES_DASHBOARD_HOST=127.0.0.1",
             "--env",
             "HERMES_DASHBOARD_PORT=9119",
+            # HOME is unset on purpose. The Hermes image user home is /opt/data,
+            # the same bind mount as HERMES_HOME. OpenCode reads that HOME.
             image_id,
             "gateway",
             "run",
@@ -824,6 +901,113 @@ def assistant_runtime_dir(assistant_id):
     return STATE_ROOT / f"runtime/assistants/{assistant_id}/data"
 
 
+def assistant_fleet_dir(assistant_id):
+    return STATE_ROOT / f"fleet/assistants/{assistant_id}"
+
+
+def first_existing_path(paths):
+    fallback = None
+    for path in paths:
+        if path is None:
+            continue
+        candidate = Path(path)
+        if fallback is None:
+            fallback = candidate
+        if candidate.is_file():
+            return candidate
+    return fallback
+
+
+def controller_hermes_dir():
+    override_home = os.environ.get("AIDEE_CONTROLLER_HOME")
+    if override_home:
+        return Path(override_home) / ".hermes"
+    preferred = STATE_ROOT / "controller-home" / ".hermes"
+    if preferred.is_dir() or (preferred / "config.yaml").is_file():
+        return preferred
+    return STATE_ROOT / "controller"
+
+
+def controller_config_path():
+    return first_existing_path(
+        [
+            Path(os.environ["AIDEE_CONTROLLER_CONFIG"])
+            if os.environ.get("AIDEE_CONTROLLER_CONFIG")
+            else None,
+            controller_hermes_dir() / "config.yaml",
+            STATE_ROOT / "controller-home" / ".hermes" / "config.yaml",
+            STATE_ROOT / "controller" / "config.yaml",
+        ]
+    )
+
+
+def controller_env_path():
+    return first_existing_path(
+        [
+            Path(os.environ["AIDEE_CONTROLLER_ENV"])
+            if os.environ.get("AIDEE_CONTROLLER_ENV")
+            else None,
+            controller_hermes_dir() / ".env",
+            STATE_ROOT / "controller-home" / ".hermes" / ".env",
+            STATE_ROOT / "controller" / ".env",
+        ]
+    )
+
+
+def load_image_record(version):
+    if not isinstance(version, str) or not version:
+        return None
+    path = IMAGE_RECORD_ROOT / f"{version}.json"
+    try:
+        record = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+    return record if isinstance(record, dict) else None
+
+
+def hermes_skill_paths(home):
+    return [Path(home) / relative for relative in OPENCODE_SKILL_PATHS]
+
+
+def controller_opencode_desired_path():
+    return STATE_ROOT / "fleet/controller/opencode.json"
+
+
+def controller_runtime_view():
+    home = controller_hermes_dir()
+    present = shutil.which("opencode") is not None
+    source = "host" if present else "missing"
+    return inspect_hermes_runtime(
+        config_path=controller_config_path(),
+        env_path=controller_env_path(),
+        plugins_dirs=[home / "plugins"],
+        opencode_paths=hermes_skill_paths(home),
+        opencode_present=present,
+        opencode_source=source,
+        opencode_desired_path=controller_opencode_desired_path(),
+        opencode_scope="host",
+    )
+
+
+def assistant_runtime_view(assistant_id, item=None, image_record=None):
+    runtime = assistant_runtime_dir(assistant_id)
+    record = image_record
+    if record is None and isinstance(item, dict):
+        image = item.get("image") if isinstance(item.get("image"), dict) else {}
+        record = load_image_record(image.get("aidee_version"))
+    present = image_has_opencode(record)
+    return inspect_hermes_runtime(
+        config_path=runtime / "config.yaml",
+        env_path=runtime / ".env",
+        plugins_dirs=[runtime / "plugins"],
+        opencode_paths=hermes_skill_paths(runtime),
+        opencode_present=present,
+        opencode_source="image" if present else "missing",
+        opencode_desired_path=runtime / OPENCODE_DESIRED_RELATIVE,
+        opencode_scope="image",
+    )
+
+
 def assistant_secret_dir(assistant_id):
     return STATE_ROOT / f"secrets/assistants/{assistant_id}"
 
@@ -909,25 +1093,6 @@ def set_dashboard_origin(request):
             "Do not put dashboard URLs in Telegram descriptions."
         ),
     }
-
-
-def upsert_env(text, updates):
-    seen = set()
-    lines = []
-    for line in text.splitlines():
-        replaced = False
-        for key, value in updates.items():
-            if line.startswith(f"{key}="):
-                lines.append(f"{key}={value}")
-                seen.add(key)
-                replaced = True
-                break
-        if not replaced:
-            lines.append(line)
-    for key, value in updates.items():
-        if key not in seen:
-            lines.append(f"{key}={value}")
-    return "\n".join(lines) + "\n"
 
 
 def dashboard_password_file(assistant_id):
@@ -1019,6 +1184,204 @@ def restart_assistant_containers(assistant_id):
     run(["docker", "restart", proxy_name])
 
 
+def run_optional(command, timeout=5):
+    try:
+        result = subprocess.run(
+            command, capture_output=True, text=True, timeout=timeout
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return None, str(error)
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or "command failed"
+        return None, f"{command[0]} failed: {detail}"
+    return result.stdout.strip(), None
+
+
+def host_capacity():
+    memory = {"error": "host memory is unavailable"}
+    try:
+        memory = parse_meminfo(Path("/proc/meminfo").read_text())
+    except OSError:
+        pass
+    disk_path = STATE_ROOT if STATE_ROOT.exists() else Path("/")
+    disk = {"path": str(disk_path), "error": "host disk is unavailable"}
+    try:
+        usage = shutil.disk_usage(disk_path)
+        disk = parse_disk_usage(usage.total, usage.free, disk_path)
+    except OSError:
+        pass
+    return {
+        "memory": memory,
+        "disk": disk,
+        "cpu_count": os.cpu_count(),
+    }
+
+
+def installed_release():
+    output, error = run_optional(
+        ["git", "-C", str(SOURCE_ROOT), "describe", "--tags", "--exact-match"]
+    )
+    if output:
+        return output
+    latest = SOURCE_ROOT / "LATEST"
+    try:
+        tag = latest.read_text().strip()
+    except OSError:
+        return None
+    return tag or None
+
+
+def latest_validated_image_version():
+    if not IMAGE_RECORD_ROOT.is_dir():
+        return None
+    versions = []
+    for path in IMAGE_RECORD_ROOT.glob("v*.json"):
+        try:
+            record = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        version = record.get("aidee_version")
+        if record.get("validation") == "validated" and isinstance(version, str):
+            versions.append(version)
+    if not versions:
+        return None
+    return sorted(versions)[-1]
+
+
+def load_registry_document():
+    registry_path = STATE_ROOT / "fleet/registry.yaml"
+    try:
+        registry = yaml.safe_load(registry_path.read_text())
+    except FileNotFoundError as error:
+        raise AdminError(f"required file not found: {registry_path}") from error
+    except (OSError, yaml.YAMLError) as error:
+        raise AdminError(f"fleet registry is invalid: {registry_path}") from error
+    if registry is None:
+        return {}
+    if not isinstance(registry, dict):
+        raise AdminError("fleet registry is invalid")
+    return registry
+
+
+def load_onboarding_document(path):
+    try:
+        status = json.loads(path.read_text())
+    except FileNotFoundError:
+        return None, "onboarding status is unavailable"
+    except (OSError, json.JSONDecodeError):
+        return None, "onboarding status is malformed"
+    if not isinstance(status, dict):
+        return None, "onboarding status is malformed"
+    return status, None
+
+
+def probe_assistant_live(container_name):
+    raw, error = run_optional(["docker", "inspect", container_name])
+    if error:
+        lowered = error.lower()
+        missing = "no such object" in lowered or "no such container" in lowered
+        return {
+            "health_status": "missing" if missing else "unknown",
+            "running": False,
+            "image_version": None,
+            "usage": {"cpu_percent": None, "memory_mb": None, "error": error},
+            "error": error,
+        }
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return {
+            "health_status": "unknown",
+            "running": False,
+            "image_version": None,
+            "usage": {
+                "cpu_percent": None,
+                "memory_mb": None,
+                "error": "container inspect is invalid",
+            },
+            "error": "container inspect is invalid",
+        }
+    live = parse_docker_inspect(payload)
+    stats_raw, stats_error = run_optional(
+        [
+            "docker",
+            "stats",
+            "--no-stream",
+            "--format",
+            "{{json .}}",
+            container_name,
+        ]
+    )
+    if stats_error:
+        live["usage"] = {
+            "cpu_percent": None,
+            "memory_mb": None,
+            "error": stats_error,
+        }
+    else:
+        live["usage"] = parse_docker_stats(stats_raw)
+    return live
+
+
+def fleet_overview():
+    registry = dict(load_registry_document())
+    warnings = []
+    live_by_id = {}
+    hydrated = []
+    assistants = registry.get("assistants")
+    if isinstance(assistants, list):
+        for item in assistants:
+            if not isinstance(item, dict):
+                hydrated.append(item)
+                continue
+            entry = dict(item)
+            assistant_id = entry.get("id")
+            if not isinstance(assistant_id, str):
+                hydrated.append(entry)
+                continue
+            container_name = entry.get("container_name") or f"aidee-{assistant_id}"
+            live = probe_assistant_live(container_name)
+            status_path = (
+                STATE_ROOT
+                / f"runtime/assistants/{assistant_id}/data/aidee/onboarding-status.json"
+            )
+            status, status_error = load_onboarding_document(status_path)
+            if status is not None:
+                entry["onboarding"] = status
+            else:
+                live["onboarding_error"] = status_error
+            runtime = assistant_runtime_view(assistant_id, entry)
+            live["langfuse"] = runtime.get("langfuse")
+            live["tools"] = runtime.get("tools")
+            live_by_id[assistant_id] = live
+            hydrated.append(entry)
+        registry["assistants"] = hydrated
+    controller_status, controller_error = load_onboarding_document(
+        STATE_ROOT / "fleet/controller/CONTROLLER_ONBOARDING_STATUS.json"
+    )
+    if controller_error and controller_status is None:
+        warnings.append("controller onboarding is unavailable")
+    release = {
+        "installed": installed_release(),
+        "desired": None,
+        "image_version": latest_validated_image_version(),
+        "error": None,
+    }
+    if not release["installed"] and not release["image_version"]:
+        release["error"] = "installed release is unavailable"
+    return public_payload(
+        build_overview(
+            registry,
+            host=host_capacity(),
+            release=release,
+            controller_onboarding=controller_status,
+            live_by_id=live_by_id,
+            warnings=warnings,
+            controller_runtime=controller_runtime_view(),
+        )
+    )
+
+
 def list_assistants():
     registry = yaml.safe_load((STATE_ROOT / "fleet/registry.yaml").read_text())
     assistants = []
@@ -1092,6 +1455,547 @@ def set_dashboard_credentials(request):
     }
 
 
+def persistable_request(request):
+    stored = dict(request)
+    for key in HASHED_REQUEST_KEYS:
+        value = stored.get(key)
+        if isinstance(value, str) and value:
+            stored[key] = "sha256:" + hashlib.sha256(value.encode("utf-8")).hexdigest()
+    return stored
+
+
+def load_managed_yaml(path, missing_ok=True):
+    if path is None:
+        if missing_ok:
+            return {}
+        raise AdminError("Hermes config.yaml is missing")
+    candidate = Path(path)
+    if candidate.is_symlink():
+        raise AdminError(f"managed file must not be a symlink: {candidate}")
+    if not candidate.is_file():
+        if missing_ok:
+            return {}
+        raise AdminError(f"required file not found: {candidate}")
+    try:
+        data = yaml.safe_load(candidate.read_text()) or {}
+    except yaml.YAMLError as error:
+        raise AdminError(f"Hermes config.yaml is malformed: {candidate}") from error
+    if not isinstance(data, dict):
+        raise AdminError(f"Hermes config.yaml is malformed: {candidate}")
+    return data
+
+
+def write_managed_yaml(path, data, uid, gid, mode=0o660):
+    write_text(path, yaml.safe_dump(data, sort_keys=False), uid, gid, mode)
+
+
+def write_opencode_desired(path, desired, uid, gid):
+    path = Path(path)
+    ensure_directory(path.parent, uid, gid, 0o770)
+    write_text(
+        path,
+        json.dumps(opencode_desired_document(desired), indent=2) + "\n",
+        uid,
+        gid,
+        0o660,
+    )
+
+
+def langfuse_result(view, *, restarted=False, next_action=None):
+    langfuse = view.get("langfuse") if isinstance(view, dict) else {}
+    payload = {
+        "status": "updated",
+        "langfuse": langfuse
+        if isinstance(langfuse, dict)
+        else {"status": "unknown", "reason": "Hermes runtime status is unavailable"},
+        "restarted": bool(restarted),
+    }
+    if next_action:
+        payload["next_action"] = next_action
+    return public_payload(payload)
+
+
+def schedule_controller_restart():
+    unit = f"aidee-restart-gateway-{secrets.token_hex(4)}"
+    try:
+        subprocess.Popen(
+            [
+                "systemd-run",
+                "--collect",
+                "--on-active=3s",
+                "--no-block",
+                f"--unit={unit}",
+                "systemctl",
+                "restart",
+                GATEWAY_SERVICE,
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except OSError:
+        return False
+    return True
+
+
+def write_langfuse_files(
+    config_path,
+    env_path,
+    uid,
+    gid,
+    request,
+    env_mode=0o600,
+    opencode_enabled=False,
+    opencode_config_path=None,
+    environment=None,
+    keep_keys=True,
+):
+    config_path = Path(config_path)
+    env_path = Path(env_path)
+    ensure_directory(config_path.parent, uid, gid, 0o770)
+    ensure_directory(env_path.parent, uid, gid, 0o770)
+    config = load_managed_yaml(config_path, missing_ok=True)
+    env_text = env_path.read_text() if env_path.is_file() else ""
+    enabled = bool(request.get("enabled"))
+    try:
+        next_config, next_env = apply_langfuse_settings(
+            config,
+            env_text,
+            enabled=enabled,
+            public_key=request.get("public_key"),
+            secret_key=request.get("secret_key"),
+            base_url=request.get("base_url"),
+            environment=environment,
+            opencode_enabled=opencode_enabled,
+            opencode_config_path=opencode_config_path,
+            keep_keys=keep_keys,
+        )
+    except ValueError as error:
+        raise AdminError(str(error)) from error
+    write_managed_yaml(config_path, next_config, uid, gid)
+    if enabled or env_path.is_file() or next_env.strip():
+        write_text(env_path, next_env, uid, gid, env_mode)
+    tracing = enabled and opencode_enabled
+    write_opencode_config_file(opencode_config_path, tracing, uid, gid)
+    write_opencode_credentials_file(
+        opencode_credentials_path(opencode_config_path),
+        tracing,
+        uid,
+        gid,
+        next_env,
+        environment=environment,
+    )
+
+
+def controller_soul_path():
+    return STATE_ROOT / "fleet/controller/SOUL.md"
+
+
+def controller_opencode_config_path():
+    return controller_home_dir() / OPENCODE_CONFIG_RELATIVE
+
+
+def controller_opencode_credentials_path():
+    return controller_home_dir() / OPENCODE_CREDENTIALS_RELATIVE
+
+
+def assistant_opencode_config_path(runtime):
+    return assistant_opencode_host_dir(runtime) / OPENCODE_CONFIG_RELATIVE.name
+
+
+def assistant_opencode_credentials_path(runtime):
+    return assistant_opencode_host_dir(runtime) / OPENCODE_CREDENTIALS_RELATIVE.name
+
+
+def opencode_credentials_path(config_path):
+    if config_path is None:
+        return None
+    return Path(config_path).with_name(OPENCODE_CREDENTIALS_RELATIVE.name)
+
+
+def remove_managed_file(path):
+    if path is None:
+        return
+    candidate = Path(path)
+    if candidate.is_symlink():
+        raise AdminError(f"managed file must not be a symlink: {candidate}")
+    if candidate.is_file():
+        candidate.unlink()
+
+
+def write_opencode_credentials_file(
+    path, tracing, uid, gid, env_text, environment=None
+):
+    if path is None:
+        return
+    path = Path(path)
+    if not tracing:
+        remove_managed_file(path)
+        return
+    document = opencode_langfuse_credentials_document(
+        env_text, environment=environment
+    )
+    if document is None:
+        remove_managed_file(path)
+        return
+    ensure_directory(path.parent, uid, gid, 0o770)
+    write_text(path, json.dumps(document, indent=2) + "\n", uid, gid, 0o600)
+
+
+def write_opencode_config_file(path, tracing, uid, gid):
+    if path is None:
+        return
+    path = Path(path)
+    if not tracing and not path.is_file():
+        return
+    ensure_directory(path.parent, uid, gid, 0o770)
+    current = load_opencode_config(path)
+    write_text(
+        path,
+        json.dumps(apply_opencode_config(current, tracing), indent=2) + "\n",
+        uid,
+        gid,
+        0o660,
+    )
+
+
+def patch_soul_opencode(path, enabled, uid, gid):
+    path = Path(path)
+    if path.is_symlink() or not path.is_file():
+        return
+    current = path.read_text()
+    next_text = apply_opencode_instruction(current, enabled)
+    if next_text != current:
+        write_text(path, next_text, uid, gid)
+
+
+def patch_soul_tracing(path, enabled, uid, gid):
+    path = Path(path)
+    if path.is_symlink() or not path.is_file():
+        return
+    current = path.read_text()
+    next_text = apply_tracing_instruction(current, enabled)
+    if next_text != current:
+        write_text(path, next_text, uid, gid)
+
+
+def write_opencode_env(
+    env_path, enabled, tracing, uid, gid, config_path, env_mode=0o600, environment=None
+):
+    env_path = Path(env_path)
+    current = env_path.read_text() if env_path.is_file() else ""
+    if enabled and tracing:
+        next_env = apply_opencode_langfuse_env(
+            current, config_path, environment=environment
+        )
+    else:
+        next_env = strip_opencode_langfuse_env(current)
+    if next_env != current:
+        ensure_directory(env_path.parent, uid, gid, 0o770)
+        write_text(env_path, next_env, uid, gid, env_mode)
+    write_opencode_credentials_file(
+        opencode_credentials_path(config_path),
+        enabled and tracing,
+        uid,
+        gid,
+        next_env,
+        environment=environment,
+    )
+
+
+def langfuse_tracing_on(view):
+    langfuse = view.get("langfuse") if isinstance(view, dict) else None
+    return isinstance(langfuse, dict) and langfuse.get("status") == "enabled"
+
+
+def registered_assistants():
+    registry = yaml.safe_load((STATE_ROOT / "fleet/registry.yaml").read_text())
+    items = []
+    for item in registry.get("assistants") or []:
+        if isinstance(item, dict) and isinstance(item.get("id"), str):
+            items.append(item)
+    return items
+
+
+def inherit_assistant_install_langfuse(assistant_id, item=None, install=None):
+    assistant_id = safe_assistant_id(assistant_id)
+    if item is None:
+        item = registered_assistant(assistant_id)
+    controller_uid, controller_gid = controller_identity()
+    runtime = assistant_runtime_dir(assistant_id)
+    fleet_dir = assistant_fleet_dir(assistant_id)
+    image = item.get("image") if isinstance(item.get("image"), dict) else {}
+    record = load_image_record(image.get("aidee_version"))
+    present = image_has_opencode(record)
+    opencode_enabled = opencode_is_enabled(
+        present, load_opencode_desired(runtime / OPENCODE_DESIRED_RELATIVE)
+    )
+    if install is None:
+        install = load_controller_install_langfuse(STATE_ROOT)
+    enabled = apply_install_langfuse_files(
+        runtime,
+        assistant_id,
+        install,
+        opencode_enabled=opencode_enabled,
+        uid=CONTAINER_UID,
+        gid=controller_gid,
+    )
+    patch_soul_tracing(fleet_dir / "SOUL.md", enabled, controller_uid, controller_gid)
+    patch_soul_tracing(runtime / "SOUL.md", enabled, CONTAINER_UID, controller_gid)
+    return item, record, enabled
+
+
+def set_controller_langfuse(request):
+    uid, gid = controller_identity()
+    home = controller_hermes_dir()
+    config_path = controller_config_path() or (home / "config.yaml")
+    env_path = controller_env_path() or (home / ".env")
+    present = shutil.which("opencode") is not None
+    opencode_enabled = opencode_is_enabled(
+        present, load_opencode_desired(controller_opencode_desired_path())
+    )
+    config_file = controller_opencode_config_path()
+    write_langfuse_files(
+        config_path,
+        env_path,
+        uid,
+        gid,
+        request,
+        opencode_enabled=opencode_enabled,
+        opencode_config_path=config_file,
+        environment=CONTROLLER_LANGFUSE_ENVIRONMENT,
+        keep_keys=True,
+    )
+    enabled = bool(request.get("enabled"))
+    patch_soul_tracing(controller_soul_path(), enabled, uid, gid)
+    install = load_controller_install_langfuse(STATE_ROOT)
+    for item in registered_assistants():
+        inherit_assistant_install_langfuse(item["id"], item, install)
+        restart_assistant_containers(item["id"])
+    restarted = False
+    next_action = (
+        "Restart the controller gateway so Langfuse tracing starts on the next turn."
+    )
+    if enabled:
+        restarted = schedule_controller_restart()
+        if restarted:
+            next_action = (
+                "The controller gateway will restart in a few seconds so tracing starts."
+            )
+    return langfuse_result(
+        controller_runtime_view(),
+        restarted=restarted,
+        next_action=next_action,
+    )
+
+
+def set_assistant_langfuse(request):
+    assistant_id = safe_assistant_id(request["assistant_id"])
+    item, record, _enabled = inherit_assistant_install_langfuse(assistant_id)
+    restart_assistant_containers(assistant_id)
+    return langfuse_result(
+        assistant_runtime_view(assistant_id, item, record),
+        restarted=True,
+        next_action="The assistant restarted so Langfuse tracing can load.",
+    )
+
+
+def controller_home_dir():
+    override = os.environ.get("AIDEE_CONTROLLER_HOME")
+    if override:
+        return Path(override)
+    try:
+        return Path(pwd.getpwnam(CONTROLLER_USER).pw_dir)
+    except KeyError:
+        return controller_hermes_dir().parent
+
+
+def controller_npm():
+    bundled = controller_hermes_dir() / "node" / "bin" / "npm"
+    if bundled.is_file():
+        return bundled
+    found = shutil.which("npm")
+    return Path(found) if found else None
+
+
+def run_controller_npm(args):
+    npm = controller_npm()
+    if npm is None:
+        raise AdminError(
+            "Node is not installed for the controller, so OpenCode cannot be changed here"
+        )
+    home = controller_home_dir()
+    hermes = controller_hermes_dir()
+    node_bin = hermes / "node" / "bin"
+    path = os.environ.get("PATH", "/usr/bin:/bin")
+    if node_bin.is_dir():
+        path = f"{node_bin}:{path}"
+    command = [
+        "runuser",
+        "-u",
+        CONTROLLER_USER,
+        "--",
+        "env",
+        f"HOME={home}",
+        f"HERMES_HOME={hermes}",
+        f"PATH={path}",
+        str(npm),
+        *args,
+    ]
+    return run(command)
+
+
+def write_opencode_skill(runtime_dir, enabled, uid, gid):
+    skill_path = Path(runtime_dir) / OPENCODE_RUNTIME_SKILL
+    if enabled:
+        ensure_directory(skill_path.parent, uid, gid, 0o770)
+        write_text(skill_path, OPENCODE_SKILL_BODY, uid, gid, 0o660)
+        return
+    if skill_path.is_symlink():
+        raise AdminError(f"managed file must not be a symlink: {skill_path}")
+    if skill_path.is_file():
+        skill_path.unlink()
+
+
+def set_controller_opencode(request):
+    action = request["action"]
+    uid, gid = controller_identity()
+    home = controller_hermes_dir()
+    env_path = controller_env_path() or (home / ".env")
+    config_file = controller_opencode_config_path()
+    enabled = action == "install"
+    if enabled:
+        run_controller_npm(
+            [
+                "install",
+                "--global",
+                f"--allow-scripts={OPENCODE_PACKAGE}",
+                f"{OPENCODE_PACKAGE}@{OPENCODE_VERSION}",
+            ]
+        )
+        write_opencode_desired(controller_opencode_desired_path(), "installed", uid, gid)
+        note = (
+            f"OpenCode {OPENCODE_VERSION} is installed on the controller host. "
+            "Hermes will plan and investigate, then delegate coding to OpenCode."
+        )
+    else:
+        run_controller_npm(["uninstall", "--global", OPENCODE_PACKAGE])
+        write_opencode_desired(controller_opencode_desired_path(), "absent", uid, gid)
+        note = (
+            "OpenCode was removed from the controller host PATH. "
+            "The coding-delegation instruction is off."
+        )
+    write_opencode_skill(home, enabled, uid, gid)
+    patch_soul_opencode(controller_soul_path(), enabled, uid, gid)
+    view = controller_runtime_view()
+    tracing = langfuse_tracing_on(view)
+    patch_soul_tracing(controller_soul_path(), tracing, uid, gid)
+    tracing = enabled and tracing
+    write_opencode_env(
+        env_path,
+        enabled,
+        tracing,
+        uid,
+        gid,
+        config_file,
+        environment=CONTROLLER_LANGFUSE_ENVIRONMENT,
+    )
+    write_opencode_config_file(config_file, tracing, uid, gid)
+    restarted = schedule_controller_restart()
+    next_action = (
+        "The controller gateway will restart in a few seconds so OpenCode can load."
+        if restarted
+        else "Restart the controller gateway so OpenCode can load."
+    )
+    view = controller_runtime_view()
+    return public_payload(
+        {
+            "status": "updated",
+            "action": action,
+            "note": note,
+            "tools": view.get("tools") if isinstance(view.get("tools"), list) else [],
+            "restarted": restarted,
+            "next_action": next_action,
+        }
+    )
+
+
+def set_assistant_opencode(request):
+    assistant_id = safe_assistant_id(request["assistant_id"])
+    item = registered_assistant(assistant_id)
+    action = request["action"]
+    controller_uid, controller_gid = controller_identity()
+    runtime = assistant_runtime_dir(assistant_id)
+    fleet_dir = assistant_fleet_dir(assistant_id)
+    image = item.get("image") if isinstance(item.get("image"), dict) else {}
+    record = load_image_record(image.get("aidee_version"))
+    present = image_has_opencode(record)
+    config_file = assistant_opencode_config_path(runtime)
+    enabled = action == "install"
+    if enabled:
+        if not present:
+            raise AdminError(
+                "This assistant image does not include OpenCode. "
+                "Update the assistant to an image that pins OpenCode."
+            )
+        write_opencode_skill(runtime, True, CONTAINER_UID, controller_gid)
+        write_opencode_desired(
+            runtime / OPENCODE_DESIRED_RELATIVE,
+            "installed",
+            CONTAINER_UID,
+            controller_gid,
+        )
+        note = (
+            "OpenCode is usable for this assistant. The CLI stays in the image. "
+            "Hermes will plan and investigate, then delegate coding to OpenCode."
+        )
+    else:
+        write_opencode_skill(runtime, False, CONTAINER_UID, controller_gid)
+        write_opencode_desired(
+            runtime / OPENCODE_DESIRED_RELATIVE,
+            "absent",
+            CONTAINER_UID,
+            controller_gid,
+        )
+        if present:
+            note = (
+                "The OpenCode CLI stays in the assistant image. "
+                "The coding-delegation instruction and skill are off until you enable OpenCode again."
+            )
+        else:
+            note = "OpenCode is not in this assistant image."
+    patch_soul_opencode(fleet_dir / "SOUL.md", enabled, controller_uid, controller_gid)
+    patch_soul_opencode(runtime / "SOUL.md", enabled, CONTAINER_UID, controller_gid)
+    view = assistant_runtime_view(assistant_id, item, record)
+    tracing = langfuse_tracing_on(view)
+    patch_soul_tracing(fleet_dir / "SOUL.md", tracing, controller_uid, controller_gid)
+    patch_soul_tracing(runtime / "SOUL.md", tracing, CONTAINER_UID, controller_gid)
+    tracing = enabled and tracing
+    write_opencode_env(
+        runtime / ".env",
+        enabled,
+        tracing,
+        CONTAINER_UID,
+        controller_gid,
+        config_file,
+        environment=langfuse_environment_name(assistant_id),
+    )
+    write_opencode_config_file(
+        config_file, tracing, CONTAINER_UID, controller_gid
+    )
+    restart_assistant_containers(assistant_id)
+    view = assistant_runtime_view(assistant_id, item, record)
+    return public_payload(
+        {
+            "status": "updated",
+            "assistant_id": assistant_id,
+            "action": action,
+            "note": note,
+            "tools": view.get("tools") if isinstance(view.get("tools"), list) else [],
+            "restarted": True,
+        }
+    )
+
+
 def execute(request):
     validate_request(request)
     operation = request["operation"]
@@ -1101,6 +2005,8 @@ def execute(request):
         return create_assistant(request)
     if operation == "list_assistants":
         return list_assistants()
+    if operation == "fleet_overview":
+        return fleet_overview()
     if operation == "reveal_dashboard_password":
         return reveal_dashboard_password(request["assistant_id"])
     if operation == "reset_dashboard_password":
@@ -1109,6 +2015,14 @@ def execute(request):
         return set_dashboard_credentials(request)
     if operation == "set_dashboard_origin":
         return set_dashboard_origin(request)
+    if operation == "set_controller_langfuse":
+        return set_controller_langfuse(request)
+    if operation == "set_assistant_langfuse":
+        return set_assistant_langfuse(request)
+    if operation == "set_controller_opencode":
+        return set_controller_opencode(request)
+    if operation == "set_assistant_opencode":
+        return set_assistant_opencode(request)
     if operation in {
         "start_assistant",
         "stop_assistant",
@@ -1132,14 +2046,18 @@ def execute_idempotent(request):
     record_path = records / f"{request_id}.json"
     if record_path.exists():
         record = load_json(record_path)
-        if record.get("request") != request:
+        if record.get("request") != persistable_request(request):
             raise AdminError("request ID was already used with different content")
         return record["result"]
 
     result = execute(request)
     temporary = record_path.with_suffix(".tmp")
     temporary.write_text(
-        json.dumps({"request": request, "result": result}, indent=2) + "\n"
+        json.dumps(
+            {"request": persistable_request(request), "result": result},
+            indent=2,
+        )
+        + "\n"
     )
     os.chmod(temporary, 0o660)
     try:

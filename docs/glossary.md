@@ -75,3 +75,7 @@ A question that requires the owner to change scope, authority, priorities, cost,
 **Verified outcome**
 
 A result supported by inspected artifacts and checks against stated acceptance criteria.
+
+**Aidee agent tracing**
+
+The Langfuse project configured for one Aidee install. It records how the controller Hermes agent and each assistant Hermes agent behave, and how OpenCode behaves when enabled. Aidee developers and the owner use those traces. It is not a repository's product Langfuse. The owner filters traces by environment name. `controller` is the controller. Each assistant uses its assistant id.
