@@ -106,6 +106,7 @@ assert callable(SessionDB.update_runtime_context)
 "
     hermes --version
     opencode --version
+    python -c "import langfuse"
     gh --version
     jq --version
     socat -V

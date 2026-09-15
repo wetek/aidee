@@ -80,6 +80,8 @@ assistant, plus install-wide Langfuse and OpenCode settings.
 `v0.1.0-alpha.28` exposes the overview dashboard tabs on `/overview` instead of
 root overrides for reliable Hermes sidebar navigation.
 
+`v0.1.0-alpha.29` installs the Langfuse Python SDK for assistant observability tracing.
+
 
 
 

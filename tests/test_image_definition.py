@@ -21,6 +21,7 @@ class ImageDefinitionTests(unittest.TestCase):
         )
         self.assertNotIn("hermes-agent:latest", dockerfile)
         self.assertIn("opencode-ai@${OPENCODE_VERSION}", dockerfile)
+        self.assertIn("uv pip install --system langfuse", dockerfile)
         for tool in ["gh", "jq", "socat"]:
             self.assertIn(tool, dockerfile)
         self.assertIn("org.opencontainers.image.revision", dockerfile)

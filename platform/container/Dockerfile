@@ -26,6 +26,7 @@ RUN npm install --global \
       --allow-scripts=opencode-ai \
       "opencode-ai@${OPENCODE_VERSION}" \
     && npm cache clean --force
+RUN uv pip install --system langfuse
 
 COPY platform/shared-skills/unslop/ /opt/hermes/skills/unslop/
 COPY platform/hermes-plugins/aidee-onboarding/ /opt/hermes/plugins/aidee-onboarding/
