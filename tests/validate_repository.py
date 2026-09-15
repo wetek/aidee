@@ -351,13 +351,9 @@ def validate_dashboard_homes():
         / "manifest.json"
     )
     for manifest in (overview_manifest, home_manifest):
-        if manifest.get("tab", {}).get("override") != "/":
+        if manifest.get('tab', {}).get('path') != '/overview' or 'override' in manifest.get('tab', {}):
             raise AssertionError(
-                f"{manifest.get('name')} must override the dashboard root route"
-            )
-        if manifest.get("tab", {}).get("path") != "/":
-            raise AssertionError(
-                f"{manifest.get('name')} must use the dashboard root path"
+                f"{manifest.get('name')} must use path '/overview' and not have 'override' in its tab configuration"
             )
     for relative in (
         "platform/dashboard-plugins/shared/dashboard-ui.tsx",

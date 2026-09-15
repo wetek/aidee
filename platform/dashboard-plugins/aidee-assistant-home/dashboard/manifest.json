@@ -5,8 +5,7 @@
   "icon": "House",
   "version": "0.1.0",
   "tab": {
-    "path": "/",
-    "override": "/",
+    "path": "/overview",
     "position": "start"
   },
   "entry": "dist/index.js",

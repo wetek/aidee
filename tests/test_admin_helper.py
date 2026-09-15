@@ -2422,8 +2422,9 @@ class LangfuseOpencodeWriteTests(unittest.TestCase):
                 "HERMES_LANGFUSE_SECRET_KEY=sk-lf-local-secret",
                 (root / ".env").read_text(),
             )
-            with self.assertRaisesRegex(ValueError, "does not include OpenCode"):
-                module.save_opencode(root, {"action": "install"})
+            with mock.patch("shutil.which", return_value=None):
+                with self.assertRaisesRegex(ValueError, "does not include OpenCode"):
+                    module.save_opencode(root, {"action": "install"})
             (root / "skills/autonomous-ai-agents/opencode").mkdir(parents=True)
             (root / "skills/autonomous-ai-agents/opencode/SKILL.md").write_text(
                 "name: opencode\n"

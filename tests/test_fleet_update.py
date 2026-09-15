@@ -1068,8 +1068,8 @@ class FleetUpdateTests(unittest.TestCase):
             "platform/dashboard-plugins/aidee-assistant-home/dashboard/manifest.json",
         ):
             manifest = json.loads((ROOT / relative).read_text())
-            self.assertEqual(manifest["tab"]["override"], "/")
-            self.assertEqual(manifest["tab"]["path"], "/")
+            self.assertEqual(manifest['tab']['path'], '/overview')
+            self.assertNotIn('override', manifest['tab'])
             self.assertTrue((ROOT / relative).with_name("dist").joinpath("index.js").is_file())
             source = (ROOT / relative).with_name("src").joinpath("index.tsx")
             self.assertTrue(source.is_file())

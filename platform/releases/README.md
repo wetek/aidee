@@ -77,5 +77,9 @@ sends a result before the chat reconnects.
 `v0.1.0-alpha.27` adds Aidee-owned dashboard homes for the fleet and each
 assistant, plus install-wide Langfuse and OpenCode settings.
 
+`v0.1.0-alpha.28` exposes the overview dashboard tabs on `/overview` instead of
+root overrides for reliable Hermes sidebar navigation.
+
+
 
 
