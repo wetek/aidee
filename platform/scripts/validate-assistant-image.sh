@@ -84,6 +84,9 @@ docker run \
     cd /opt/hermes
     sha256sum --check /opt/aidee/hermes-patch/HERMES_PATCHED_FILES_SHA256
     /opt/aidee/hermes-patch/scripts/apply-hermes-runtime-patch.sh --check /opt/hermes
+    test -f /opt/hermes/plugins/aidee-assistant-home/plugin.yaml
+    test -f /opt/hermes/plugins/aidee-assistant-home/dashboard/manifest.json
+    test -f /opt/hermes/plugins/aidee-assistant-home/dashboard/dist/index.js
     test -x /opt/aidee/onboarding/onboarding-gate.py
     test -x /opt/aidee/onboarding/mark-onboarding-step.py
     test -r /opt/aidee/onboarding/onboarding_state.py
@@ -142,6 +145,8 @@ done
 
 docker exec --user 10000:10000 "${container_a}" \
   test -f /opt/hermes/plugins/aidee-onboarding/plugin.yaml
+docker exec --user 10000:10000 "${container_a}" \
+  test -f /opt/hermes/plugins/aidee-assistant-home/dashboard/manifest.json
 docker exec --user 10000:10000 "${container_a}" \
   /opt/aidee/onboarding/onboarding-gate.py \
   --status-file /opt/data/aidee/onboarding-status.json \

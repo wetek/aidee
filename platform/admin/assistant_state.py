@@ -41,10 +41,40 @@ from onboarding_state import (
     onboarding_complete as status_is_complete,
 )
 
+_admin_dir = str(Path(__file__).resolve().parent)
+if _admin_dir not in sys.path:
+    sys.path.insert(0, _admin_dir)
+from fleet_status import (
+    OPENCODE_CREDENTIALS_RELATIVE,
+    OPENCODE_DESIRED_RELATIVE,
+    OPENCODE_RUNTIME_SKILL,
+    OPENCODE_SKILL_PATHS,
+    apply_install_langfuse,
+    apply_opencode_config,
+    apply_opencode_instruction,
+    apply_tracing_instruction,
+    assistant_opencode_host_dir,
+    langfuse_environment_name,
+    langfuse_view,
+    load_controller_install_langfuse,
+    load_env_text,
+    load_opencode_config,
+    load_opencode_desired,
+    load_yaml_mapping,
+    opencode_is_enabled,
+    opencode_langfuse_credentials_document,
+    opencode_paths_present,
+)
+
 CONTAINER_UID = 10000
 CONTAINER_REPOS_ROOT = "/opt/data/aidee/repos"
 ONBOARDING_RELATIVE_PATH = Path("aidee/onboarding-status.json")
+PROFILE_RELATIVE_PATH = Path("aidee/profile.json")
 ONBOARDING_PLUGIN = "aidee-onboarding"
+ASSISTANT_HOME_PLUGIN = "aidee-assistant-home"
+USER_PLUGINS = (ONBOARDING_PLUGIN, ASSISTANT_HOME_PLUGIN)
+SKIP_PLUGIN_ENTRIES = {"__pycache__", "node_modules", "src"}
+PROFILE_SCHEMA_VERSION = 1
 HOME_RESERVED_DIRECTORIES = {
     "aidee",
     "cache",
@@ -63,7 +93,7 @@ COMPLETE_STEP_STATES = {"completed", "skipped"}
 STEP_STATES = COMPLETE_STEP_STATES | {"pending", "in_progress"}
 
 
-def build_soul_document(assistant, owner):
+def build_soul_document(assistant, owner, opencode_enabled=False, tracing_enabled=False):
     name = assistant["name"]
     purpose = assistant.get("purpose") or f"Operate as {name} assistant."
     kind = assistant.get("kind", "personal")
@@ -123,40 +153,248 @@ def build_soul_document(assistant, owner):
                 "- Use `handoff` to preserve verified state across sessions.",
             ]
         )
-    return "\n".join(sections) + "\n"
+    soul = apply_opencode_instruction(
+        "\n".join(sections) + "\n", opencode_enabled
+    )
+    return apply_tracing_instruction(soul, tracing_enabled)
 
 
-def onboarding_plugin_source():
+def soul_tracing_enabled(runtime_dir):
+    runtime_dir = Path(runtime_dir)
+    config, config_error = load_yaml_mapping(runtime_dir / "config.yaml")
+    env_text, env_error = load_env_text(runtime_dir / ".env")
+    view = langfuse_view(
+        config, env_text, config_error=config_error, env_error=env_error
+    )
+    return view.get("status") == "enabled"
+
+
+def apply_install_langfuse_files(
+    runtime_dir,
+    assistant_id,
+    install,
+    *,
+    opencode_enabled=False,
+    uid=None,
+    gid=None,
+):
+    if install is None:
+        return False
+    runtime_dir = Path(runtime_dir)
+    config_path = runtime_dir / "config.yaml"
+    env_path = runtime_dir / ".env"
+    config, config_error = load_yaml_mapping(config_path)
+    if config is None:
+        config = {}
+    env_text = env_path.read_text() if env_path.is_file() else ""
+    view = langfuse_view(config, env_text, config_error=config_error)
+    enabled = bool(install.get("enabled") and install.get("credentials"))
+    if not enabled and view.get("status") == "disabled" and not view.get("keys_set"):
+        return False
+    next_config, next_env = apply_install_langfuse(
+        config,
+        env_text,
+        enabled=enabled,
+        credentials=install.get("credentials") if install else None,
+        environment=langfuse_environment_name(assistant_id),
+        opencode_enabled=enabled and opencode_enabled,
+        opencode_config_path=assistant_opencode_host_dir(runtime_dir)
+        / "opencode.json",
+        keep_keys=False,
+    )
+    atomic_write(
+        config_path,
+        yaml.safe_dump(next_config, sort_keys=False),
+        uid=uid,
+        gid=gid,
+    )
+    if enabled or env_path.is_file() or next_env.strip():
+        atomic_write(env_path, next_env, uid=uid, gid=gid, mode=0o600)
+    opencode_dir = assistant_opencode_host_dir(runtime_dir)
+    opencode_path = opencode_dir / "opencode.json"
+    credentials_path = opencode_dir / OPENCODE_CREDENTIALS_RELATIVE.name
+    if enabled and opencode_enabled:
+        ensure_directory(opencode_dir, uid=uid, gid=gid)
+        current = load_opencode_config(opencode_path)
+        atomic_write(
+            opencode_path,
+            json.dumps(apply_opencode_config(current, True), indent=2) + "\n",
+            uid=uid,
+            gid=gid,
+        )
+        document = opencode_langfuse_credentials_document(
+            next_env, environment=langfuse_environment_name(assistant_id)
+        )
+        if document is not None:
+            atomic_write(
+                credentials_path,
+                json.dumps(document, indent=2) + "\n",
+                uid=uid,
+                gid=gid,
+                mode=0o600,
+            )
+        elif credentials_path.is_symlink():
+            raise RuntimeError(
+                f"refusing to replace managed symlink: {credentials_path}"
+            )
+        elif credentials_path.is_file():
+            credentials_path.unlink()
+    else:
+        if opencode_path.is_file() and not opencode_path.is_symlink():
+            current = load_opencode_config(opencode_path)
+            atomic_write(
+                opencode_path,
+                json.dumps(apply_opencode_config(current, False), indent=2) + "\n",
+                uid=uid,
+                gid=gid,
+            )
+        if credentials_path.is_symlink():
+            raise RuntimeError(
+                f"refusing to replace managed symlink: {credentials_path}"
+            )
+        if credentials_path.is_file():
+            credentials_path.unlink()
+    return enabled
+
+
+def soul_opencode_enabled(runtime_dir):
+    runtime_dir = Path(runtime_dir)
+    desired = load_opencode_desired(runtime_dir / OPENCODE_DESIRED_RELATIVE)
+    present = opencode_paths_present(
+        [runtime_dir / relative for relative in OPENCODE_SKILL_PATHS]
+    ) or (runtime_dir / OPENCODE_RUNTIME_SKILL).is_file()
+    return opencode_is_enabled(present, desired)
+
+
+def user_plugin_source(plugin_name):
     here = Path(__file__).resolve().parent
+    source_root = Path(os.environ.get("AIDEE_SOURCE_ROOT", "/opt/aidee/source"))
     candidates = [
-        here.parent / "hermes-plugins" / ONBOARDING_PLUGIN,
-        Path(os.environ.get("AIDEE_SOURCE_ROOT", "/opt/aidee/source"))
-        / "platform/hermes-plugins"
-        / ONBOARDING_PLUGIN,
+        here.parent / "hermes-plugins" / plugin_name,
+        here.parent / "dashboard-plugins" / plugin_name,
+        source_root / "platform/hermes-plugins" / plugin_name,
+        source_root / "platform/dashboard-plugins" / plugin_name,
     ]
     for path in candidates:
-        if (path / "plugin.yaml").is_file():
+        if (path / "plugin.yaml").is_file() or (
+            path / "dashboard" / "manifest.json"
+        ).is_file():
             return path
     return None
 
 
-def install_onboarding_plugin_files(runtime_dir, uid=None, gid=None):
-    """Install the onboarding plugin under the assistant Hermes home."""
-    source = onboarding_plugin_source()
-    if source is None:
-        return []
-    destination = runtime_dir / "plugins" / ONBOARDING_PLUGIN
+def onboarding_plugin_source():
+    return user_plugin_source(ONBOARDING_PLUGIN)
+
+
+def _copy_plugin_tree(source, destination, uid=None, gid=None):
     ensure_directory(destination, uid=uid, gid=gid)
     changed = []
     for item in sorted(source.iterdir()):
-        if not item.is_file() or item.name.endswith(".pyc"):
+        if item.name in SKIP_PLUGIN_ENTRIES or item.name.endswith(".pyc"):
             continue
         target = destination / item.name
-        content = item.read_text()
-        if not target.is_file() or target.read_text() != content:
-            atomic_write(target, content, uid=uid, gid=gid)
-            changed.append(str(target))
-        ensure_file_metadata(target, uid=uid, gid=gid)
+        if item.is_dir():
+            changed.extend(_copy_plugin_tree(item, target, uid=uid, gid=gid))
+        elif item.is_file():
+            content = item.read_text()
+            if not target.is_file() or target.read_text() != content:
+                atomic_write(target, content, uid=uid, gid=gid)
+                changed.append(str(target))
+            ensure_file_metadata(target, uid=uid, gid=gid)
+    return changed
+
+
+def install_user_plugin_files(runtime_dir, plugin_name, uid=None, gid=None):
+    """Install one Hermes plugin under the assistant home."""
+    source = user_plugin_source(plugin_name)
+    if source is None:
+        return []
+    destination = runtime_dir / "plugins" / plugin_name
+    return _copy_plugin_tree(source, destination, uid=uid, gid=gid)
+
+
+def install_onboarding_plugin_files(runtime_dir, uid=None, gid=None):
+    """Install the onboarding plugin under the assistant Hermes home."""
+    return install_user_plugin_files(
+        runtime_dir, ONBOARDING_PLUGIN, uid=uid, gid=gid
+    )
+
+
+def install_assistant_plugins(runtime_dir, uid=None, gid=None):
+    changed = []
+    for name in USER_PLUGINS:
+        changed.extend(
+            install_user_plugin_files(runtime_dir, name, uid=uid, gid=gid)
+        )
+    return changed
+
+
+def sanitize_profile_projects(projects):
+    result = []
+    if not isinstance(projects, list):
+        return result
+    for project in projects:
+        if not isinstance(project, dict):
+            continue
+        project_id = project.get("id")
+        if not isinstance(project_id, str) or not project_id.strip():
+            continue
+        repositories = []
+        for repository in project.get("repositories") or []:
+            if not isinstance(repository, dict):
+                continue
+            url = repository.get("url")
+            if isinstance(url, str) and url.strip():
+                repositories.append({"url": url.strip()})
+        result.append({"id": project_id.strip(), "repositories": repositories})
+    return result
+
+
+def profile_capabilities(assistant, fleet_config):
+    capabilities = []
+    kind = assistant.get("kind") or "personal"
+    if kind in {"coding", "project"}:
+        capabilities.append("coding")
+    if sanitize_profile_projects((fleet_config or {}).get("projects")):
+        capabilities.append("projects")
+    return capabilities
+
+
+def build_assistant_profile(assistant, fleet_config=None):
+    """Return the non-secret assistant home read model."""
+    config = fleet_config if isinstance(fleet_config, dict) else {}
+    identity = config.get("assistant") if isinstance(config.get("assistant"), dict) else {}
+    assistant_id = identity.get("id") or assistant["id"]
+    name = identity.get("name") or assistant.get("name") or assistant_id
+    kind = identity.get("kind") or assistant.get("kind") or "personal"
+    purpose = (
+        identity.get("purpose")
+        or assistant.get("purpose")
+        or f"Operate as {name} assistant."
+    )
+    return {
+        "schema_version": PROFILE_SCHEMA_VERSION,
+        "id": assistant_id,
+        "name": name,
+        "kind": kind,
+        "purpose": purpose,
+        "projects": sanitize_profile_projects(config.get("projects")),
+        "capabilities": profile_capabilities(
+            {"id": assistant_id, "name": name, "kind": kind},
+            config,
+        ),
+    }
+
+
+def write_assistant_profile(runtime_dir, profile, uid=None, gid=None):
+    path = runtime_dir / PROFILE_RELATIVE_PATH
+    rendered = json.dumps(profile, indent=2) + "\n"
+    changed = []
+    if not path.is_file() or path.read_text() != rendered:
+        atomic_write(path, rendered, uid=uid, gid=gid)
+        changed.append(str(path))
+    ensure_file_metadata(path, uid=uid, gid=gid)
     return changed
 
 
@@ -206,8 +444,8 @@ def apply_published_dashboard_url(config, url):
     return True
 
 
-def enable_onboarding_plugin(config):
-    """Add the onboarding plugin to plugins.enabled without dropping others."""
+def enable_user_plugin(config, plugin_name):
+    """Add one plugin to plugins.enabled without dropping others."""
     if not isinstance(config, dict):
         raise RuntimeError("assistant config is not a mapping")
     plugins = config.get("plugins")
@@ -218,10 +456,22 @@ def enable_onboarding_plugin(config):
     if not isinstance(enabled, list):
         enabled = []
         plugins["enabled"] = enabled
-    if ONBOARDING_PLUGIN not in enabled:
-        enabled.append(ONBOARDING_PLUGIN)
+    if plugin_name not in enabled:
+        enabled.append(plugin_name)
         return True
     return False
+
+
+def enable_onboarding_plugin(config):
+    """Add the onboarding plugin to plugins.enabled without dropping others."""
+    return enable_user_plugin(config, ONBOARDING_PLUGIN)
+
+
+def enable_assistant_home_plugins(config):
+    changed = enable_user_plugin(config, ONBOARDING_PLUGIN)
+    if enable_user_plugin(config, ASSISTANT_HOME_PLUGIN):
+        changed = True
+    return changed
 
 
 def default_assistant_config(assistant):
@@ -435,7 +685,7 @@ def reconcile_dashboard_branding(assistant, runtime_dir, uid=None, gid=None):
     if not isinstance(display, dict):
         display = {}
         config["display"] = display
-    plugin_changed = enable_onboarding_plugin(config)
+    plugin_changed = enable_assistant_home_plugins(config)
     display_changed = display.get("skin") != assistant["id"]
     if display_changed:
         display["skin"] = assistant["id"]
@@ -462,7 +712,7 @@ def reconcile_dashboard_branding(assistant, runtime_dir, uid=None, gid=None):
             ) from error
         profile_changed = False
         if isinstance(profile, dict):
-            profile_changed = enable_onboarding_plugin(profile)
+            profile_changed = enable_assistant_home_plugins(profile)
             if published and apply_published_dashboard_url(profile, published):
                 profile_changed = True
         if profile_changed:
@@ -511,6 +761,8 @@ def reconcile_assistant_files(
     uid=CONTAINER_UID,
     gid=None,
     fleet_uid=None,
+    install_tracing=None,
+    state_root=None,
 ):
     """Converge generated files while preserving user-owned config and credentials."""
     changed = []
@@ -522,7 +774,24 @@ def reconcile_assistant_files(
         runtime_dir / "aidee",
     ):
         ensure_directory(directory, uid=uid, gid=gid)
-    soul = build_soul_document(assistant, owner)
+    if install_tracing is None and state_root is not None:
+        install_tracing = load_controller_install_langfuse(state_root)
+    opencode_enabled = soul_opencode_enabled(runtime_dir)
+    if install_tracing is not None:
+        apply_install_langfuse_files(
+            runtime_dir,
+            assistant["id"],
+            install_tracing,
+            opencode_enabled=opencode_enabled,
+            uid=uid,
+            gid=gid,
+        )
+    soul = build_soul_document(
+        assistant,
+        owner,
+        opencode_enabled=opencode_enabled,
+        tracing_enabled=soul_tracing_enabled(runtime_dir),
+    )
     for path, owner_uid in (
         (fleet_dir / "SOUL.md", fleet_uid),
         (runtime_dir / "SOUL.md", uid),
@@ -569,7 +838,7 @@ def reconcile_assistant_files(
             "dashboard": {"public_url": dashboard_url},
             "display": {"skin": assistant["id"]},
             "platforms": {"telegram": {"enabled": True}},
-            "plugins": {"enabled": [ONBOARDING_PLUGIN]},
+            "plugins": {"enabled": list(USER_PLUGINS)},
         }
         atomic_write(
             runtime_config,
@@ -584,8 +853,21 @@ def reconcile_assistant_files(
         assistant, runtime_dir, uid=uid, gid=gid
     )
     changed.extend(branding_changes)
+    changed.extend(install_assistant_plugins(runtime_dir, uid=uid, gid=gid))
+    fleet_config = None
+    try:
+        loaded = yaml.safe_load(assistant_config.read_text())
+        if isinstance(loaded, dict):
+            fleet_config = loaded
+    except (OSError, yaml.YAMLError):
+        fleet_config = None
     changed.extend(
-        install_onboarding_plugin_files(runtime_dir, uid=uid, gid=gid)
+        write_assistant_profile(
+            runtime_dir,
+            build_assistant_profile(assistant, fleet_config),
+            uid=uid,
+            gid=gid,
+        )
     )
     skin = runtime_dir / "skins" / f"{assistant['id']}.yaml"
     ensure_file_metadata(skin, uid=uid, gid=gid)

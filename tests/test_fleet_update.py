@@ -316,9 +316,21 @@ class FleetUpdateTests(unittest.TestCase):
                 "aidee-onboarding",
                 repaired_config["plugins"]["enabled"],
             )
+            self.assertIn(
+                "aidee-assistant-home",
+                repaired_config["plugins"]["enabled"],
+            )
             self.assertTrue(
                 (runtime / "plugins/aidee-onboarding/plugin.yaml").is_file()
             )
+            self.assertTrue(
+                (runtime / "plugins/aidee-assistant-home/plugin.yaml").is_file()
+            )
+            profile = json.loads((runtime / "aidee/profile.json").read_text())
+            self.assertEqual(profile["id"], "pilot")
+            self.assertEqual(profile["kind"], "coding")
+            self.assertIn("coding", profile["capabilities"])
+            self.assertNotIn("password", json.dumps(profile))
             self.assertEqual(env.read_text(), "TOKEN=preserved\n")
             self.assertTrue((runtime / "aidee/repos").is_dir())
             self.assertEqual((runtime / "aidee/repos").stat().st_mode & 0o777, 0o770)
@@ -349,6 +361,119 @@ class FleetUpdateTests(unittest.TestCase):
                 "dashboard.public_url",
             ):
                 self.assertIn(expected, soul)
+
+    def test_reconciliation_reapplies_opencode_instruction_from_desired_state(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fleet = Path(temporary) / "fleet/assistants/pilot"
+            runtime = Path(temporary) / "runtime/assistants/pilot/data"
+            fleet.mkdir(parents=True)
+            runtime.mkdir(parents=True)
+            (runtime / "aidee").mkdir()
+            (runtime / "aidee/opencode.json").write_text(
+                json.dumps({"desired": "installed"}) + "\n"
+            )
+            (runtime / "skills/opencode").mkdir(parents=True)
+            (runtime / "skills/opencode/SKILL.md").write_text("# OpenCode\n")
+            assistant = {
+                "id": "pilot",
+                "name": "Pilot",
+                "kind": "coding",
+                "purpose": "Ship code",
+            }
+            with mock.patch("os.chown"):
+                assistant_state.reconcile_assistant_files(
+                    assistant,
+                    "Owner",
+                    fleet,
+                    runtime,
+                    uid=os.getuid(),
+                    fleet_uid=os.getuid(),
+                )
+            soul = (runtime / "SOUL.md").read_text()
+            self.assertIn("AIDEE:OPENCODE-DELEGATION:BEGIN", soul)
+            self.assertEqual((fleet / "SOUL.md").read_text(), soul)
+            (runtime / "aidee/opencode.json").write_text(
+                json.dumps({"desired": "absent"}) + "\n"
+            )
+            (runtime / "skills/opencode/SKILL.md").unlink()
+            with mock.patch("os.chown"):
+                assistant_state.reconcile_assistant_files(
+                    assistant,
+                    "Owner",
+                    fleet,
+                    runtime,
+                    uid=os.getuid(),
+                    fleet_uid=os.getuid(),
+                )
+            self.assertNotIn(
+                "AIDEE:OPENCODE-DELEGATION:BEGIN",
+                (runtime / "SOUL.md").read_text(),
+            )
+
+    def test_reconciliation_inherits_install_tracing_instruction(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fleet = root / "fleet/assistants/pilot"
+            runtime = root / "runtime/assistants/pilot/data"
+            controller = root / "controller-home" / ".hermes"
+            fleet.mkdir(parents=True)
+            runtime.mkdir(parents=True)
+            controller.mkdir(parents=True)
+            (runtime / "aidee").mkdir()
+            (runtime / "config.yaml").write_text("{}\n")
+            (runtime / ".env").write_text("MODEL=keep\n")
+            (controller / "config.yaml").write_text(
+                "plugins:\n  enabled:\n    - observability/langfuse\n"
+            )
+            (controller / ".env").write_text(
+                "HERMES_LANGFUSE_PUBLIC_KEY=pk-lf-reconcile-public\n"
+                "HERMES_LANGFUSE_SECRET_KEY=sk-lf-reconcile-secret\n"
+                "HERMES_LANGFUSE_BASE_URL=https://cloud.langfuse.com\n"
+                "HERMES_LANGFUSE_ENV=controller\n"
+            )
+            assistant = {
+                "id": "pilot",
+                "name": "Pilot",
+                "kind": "coding",
+                "purpose": "Ship code",
+            }
+            with mock.patch("os.chown"):
+                assistant_state.reconcile_assistant_files(
+                    assistant,
+                    "Owner",
+                    fleet,
+                    runtime,
+                    uid=os.getuid(),
+                    fleet_uid=os.getuid(),
+                    state_root=root,
+                )
+            soul = (runtime / "SOUL.md").read_text()
+            self.assertIn("AIDEE:AIDEE-AGENT-TRACING:BEGIN", soul)
+            self.assertEqual((fleet / "SOUL.md").read_text(), soul)
+            env_text = (runtime / ".env").read_text()
+            self.assertIn("HERMES_LANGFUSE_PUBLIC_KEY=pk-lf-reconcile-public", env_text)
+            self.assertIn("HERMES_LANGFUSE_ENV=pilot", env_text)
+            (controller / "config.yaml").write_text(
+                "plugins:\n  disabled:\n    - observability/langfuse\n"
+            )
+            with mock.patch("os.chown"):
+                assistant_state.reconcile_assistant_files(
+                    assistant,
+                    "Owner",
+                    fleet,
+                    runtime,
+                    uid=os.getuid(),
+                    fleet_uid=os.getuid(),
+                    state_root=root,
+                )
+            self.assertNotIn(
+                "AIDEE:AIDEE-AGENT-TRACING:BEGIN",
+                (runtime / "SOUL.md").read_text(),
+            )
+            self.assertNotIn(
+                "HERMES_LANGFUSE_SECRET_KEY=",
+                (runtime / ".env").read_text(),
+            )
 
     def test_reconciliation_copies_registry_dashboard_url_into_config(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -473,6 +598,56 @@ class FleetUpdateTests(unittest.TestCase):
                     )
             self.assertEqual(list(outside.iterdir()), [])
 
+    def test_assistant_profile_keeps_non_secret_fields_only(self):
+        profile = assistant_state.build_assistant_profile(
+            {
+                "id": "pilot",
+                "name": "Pilot",
+                "kind": "coding",
+                "purpose": "Ship code",
+            },
+            {
+                "assistant": {
+                    "id": "pilot",
+                    "name": "Pilot",
+                    "kind": "coding",
+                    "purpose": "Ship code",
+                },
+                "projects": [
+                    {
+                        "id": "aidee",
+                        "repositories": [
+                            {
+                                "url": "https://example.com/aidee.git",
+                                "token": "hidden",
+                            }
+                        ],
+                    },
+                    {"repositories": [{"url": "https://example.com/skip.git"}]},
+                ],
+                "dashboard_password": "hidden",
+            },
+        )
+        self.assertEqual(profile["id"], "pilot")
+        self.assertEqual(profile["capabilities"], ["coding", "projects"])
+        self.assertEqual(
+            profile["projects"],
+            [
+                {
+                    "id": "aidee",
+                    "repositories": [{"url": "https://example.com/aidee.git"}],
+                }
+            ],
+        )
+        self.assertNotIn("token", json.dumps(profile))
+        self.assertNotIn("dashboard_password", profile)
+        fallback = assistant_state.build_assistant_profile(
+            {"id": "pilot", "name": "Pilot"},
+            "not-a-mapping",
+        )
+        self.assertEqual(fallback["kind"], "personal")
+        self.assertEqual(fallback["projects"], [])
+
     def test_create_and_sync_paths_use_central_instruction_generator(self):
         admin_source = (
             ROOT / "platform/admin/aidee_admin.py"
@@ -564,12 +739,15 @@ class FleetUpdateTests(unittest.TestCase):
     def test_reconcile_proxy_uses_explicit_socat_entrypoint_before_image(self):
         assistant = legacy_registry()["assistants"][0]
         image_id = "sha256:" + "b" * 64
-        _, _, _, proxy_command = reconcile.create_container_commands(
+        _, _, main_command, proxy_command = reconcile.create_container_commands(
             assistant,
             image_id,
             Path("/var/lib/aidee"),
             1000,
         )
+        flattened = " ".join(main_command)
+        self.assertNotIn("--env HOME=", flattened)
+        self.assertNotIn("--env HERMES_HOME=", flattened)
         entrypoint_index = proxy_command.index("--entrypoint")
         self.assertEqual(
             proxy_command[entrypoint_index : entrypoint_index + 3],
@@ -878,8 +1056,46 @@ class FleetUpdateTests(unittest.TestCase):
         self.assertIn("plugins enable", install)
         self.assertIn("--no-allow-tool-override", install)
         self.assertNotIn('printf "n\\n"', install)
+        self.assertIn("aidee-overview", install)
+        self.assertIn("aidee-fleet", install)
         self.assertIn("--no-allow-tool-override", sync)
         self.assertNotIn('printf "n\\n"', sync)
+        self.assertIn("aidee-overview", sync)
+
+    def test_root_plugin_manifests_override_dashboard_home(self):
+        for relative in (
+            "platform/dashboard-plugins/aidee-overview/dashboard/manifest.json",
+            "platform/dashboard-plugins/aidee-assistant-home/dashboard/manifest.json",
+        ):
+            manifest = json.loads((ROOT / relative).read_text())
+            self.assertEqual(manifest["tab"]["override"], "/")
+            self.assertEqual(manifest["tab"]["path"], "/")
+            self.assertTrue((ROOT / relative).with_name("dist").joinpath("index.js").is_file())
+            source = (ROOT / relative).with_name("src").joinpath("index.tsx")
+            self.assertTrue(source.is_file())
+            source_text = source.read_text()
+            self.assertIn("Langfuse", source_text)
+            self.assertIn("OpenCode", source_text)
+
+    def test_assistant_image_and_helper_install_home_plugin(self):
+        dockerfile = (ROOT / "platform/container/Dockerfile").read_text()
+        image_check = (
+            ROOT / "platform/scripts/validate-assistant-image.sh"
+        ).read_text()
+        helper = (ROOT / "platform/scripts/install-admin-helper.sh").read_text()
+        self.assertIn(
+            "dashboard-plugins/aidee-assistant-home/",
+            dockerfile,
+        )
+        self.assertIn(
+            "/opt/hermes/plugins/aidee-assistant-home/",
+            dockerfile,
+        )
+        self.assertIn(
+            "/opt/hermes/plugins/aidee-assistant-home/dashboard/manifest.json",
+            image_check,
+        )
+        self.assertIn("fleet_status.py", helper)
 
 
 if __name__ == "__main__":

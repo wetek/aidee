@@ -29,7 +29,11 @@ class ImageDefinitionTests(unittest.TestCase):
         self.assertIn("apply-hermes-runtime-patch.sh /opt/hermes", dockerfile)
         self.assertIn("hermes-plugins/aidee-onboarding", dockerfile)
         self.assertIn("/opt/hermes/plugins/aidee-onboarding", dockerfile)
+        self.assertIn("dashboard-plugins/aidee-assistant-home", dockerfile)
+        self.assertIn("/opt/hermes/plugins/aidee-assistant-home", dockerfile)
         self.assertIn("HEALTHCHECK", dockerfile)
+        self.assertNotIn("ENV HOME=", dockerfile)
+        self.assertNotIn("ENV HERMES_HOME=", dockerfile)
 
     def test_hermes_patch_is_pinned_and_fail_closed(self):
         patch_sha = (ROOT / "platform/HERMES_PATCH_SHA256").read_text().strip()

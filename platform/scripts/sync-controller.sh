@@ -168,6 +168,9 @@ install_controller_plugin() {
 }
 
 install_controller_plugin \
+  "${target}/platform/dashboard-plugins/aidee-overview" \
+  "${HERMES_HOME}/plugins/aidee-overview"
+install_controller_plugin \
   "${target}/platform/dashboard-plugins/aidee-fleet" \
   "${HERMES_HOME}/plugins/aidee-fleet"
 install_controller_plugin \

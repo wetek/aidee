@@ -32,7 +32,7 @@ The controller interviews the owner, generates plans and configuration, executes
 
 The controller calls a root-owned Aidee helper for a fixed set of operations. The helper validates assistant identifiers, paths, resource limits, image references, mounts, ports, and requested actions. It never executes a controller-provided shell command or Compose file.
 
-The helper listens on a Unix socket available only to the controller account. It supports fixed image, create, start, stop, and status operations. The controller submits validated JSON requests after owner approval.
+The helper listens on a Unix socket available only to the controller account. It supports fixed image, create, start, stop, status, and `fleet_overview` operations. `fleet_overview` returns bounded non-secret JSON for the controller home page. The controller submits validated JSON requests after owner approval.
 
 ### Assistants
 
@@ -46,9 +46,9 @@ Every assistant on one Aidee release uses the same immutable image ID. Docker st
 
 The image derives from a pinned official Hermes image. Alpha 14 applies one
 checksum-verified temporary Hermes runtime-context patch to the exact pinned
-source. It adds GitHub CLI, jq, OpenCode, socat, Aidee shared skills, and the
-onboarding plugin. It contains no identity, memory, project repository, or
-credential.
+source. It adds GitHub CLI, jq, OpenCode, socat, Aidee shared skills, the
+onboarding plugin, and the assistant home dashboard plugin. It contains no
+identity, memory, project repository, or credential.
 
 The root-owned image record under `/etc/aidee/images` is authoritative. Controller-written requests choose an Aidee version, not a Docker image or build argument.
 
@@ -120,6 +120,14 @@ A chatbot must never receive secrets. The owner enters them through masked termi
 
 Dashboards and APIs bind to loopback by default. Tailscale Serve is the default automated phone-access adapter. An SSH tunnel provides temporary access. An owner may record a custom HTTPS origin per dashboard. That origin is stored in `registry.yaml` and the assistant `config.yaml` `dashboard.public_url`. Telegram menu buttons copy that URL. Cloudflare Tunnel remains a planned adapter for provisioning the hostname itself.
 
+Opening the controller dashboard lands on Fleet overview. That page shows host capacity, installed and desired release, controller onboarding, and one card per assistant. Status chips show health, Langfuse tracing, and OpenCode. Assistant cards are display-only. The only action is Open dashboard.
+
+Controller Langfuse and OpenCode are edited on the Controller section of that page. The owner enters one Langfuse public key, secret key, and URL for the whole install. That write stores `HERMES_LANGFUSE_*` and `HERMES_LANGFUSE_ENV=controller` in the controller Hermes `.env`, enables `observability/langfuse`, and copies the same keys into every assistant `.env` with `HERMES_LANGFUSE_ENV` set to that assistant's id. Those keys appear on each environment's Hermes Keys page. Enabling OpenCode on the controller runs a real npm install of the pinned package.
+
+Opening an assistant dashboard lands on Overview for that assistant only. Tracing status there is read-only. OpenCode enable still writes the skill, a marked SOUL.md coding-delegation block, and OpenCode plugin config. Disable removes that instruction and skill. The CLI stays in the image. If install tracing is on and OpenCode is enabled, the same Hermes `.env` also gets the OpenCode plugin names `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_BASEURL`, and `LANGFUSE_ENVIRONMENT`. Those unrecognized names show under Custom Keys. Aidee also writes the official OpenCode credentials file at `$HOME/.config/opencode/opencode-langfuse.json` (mode 0600) and deletes it when OpenCode or install tracing is off. Assistant HOME is `/opt/data`, the same bind-mounted Hermes home. Controller OpenCode enable or disable restarts the gateway so the plugin and keys load. A marked SOUL.md Aidee agent tracing block tells the agent that this Langfuse project is install process tracing, not a repository's product Langfuse.
+
+Dashboard logins stay on the Fleet tab. Overview GET responses do not include secrets. Both Aidee pages use Hermes `tab.override: "/"` so the product home is Aidee without a Hermes fork.
+
 ## Controller onboarding
 
 The controller runs a locked durable gate before operational work. An
@@ -176,7 +184,7 @@ The administration helper then creates fixed directories and a container from va
 
 ## Coding work
 
-A project assistant investigates a request before asking for implementation approval. After approval, it may create a work item and delegate a bounded task to the configured coding agent. Merge and production deployment remain manual by default.
+When OpenCode is enabled, that Hermes agent researches, observes, and plans. It does not write the code. It delegates coding to OpenCode. The instruction lives in a marked block in `SOUL.md`, which Hermes loads from `HERMES_HOME` on every run. Reconcile keeps or removes that block from the recorded OpenCode desired state. Merge and production deployment remain manual by default.
 
 The coding agent receives only the repository, task, credentials, and tools required for that run.
 

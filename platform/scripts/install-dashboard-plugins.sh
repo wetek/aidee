@@ -4,6 +4,7 @@ set -Eeuo pipefail
 AIDEE_CONTROLLER_USER="${AIDEE_CONTROLLER_USER:-aidee-controller}"
 source_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 fleet_source="${source_root}/platform/dashboard-plugins/aidee-fleet"
+overview_source="${source_root}/platform/dashboard-plugins/aidee-overview"
 onboarding_source="${source_root}/platform/hermes-plugins/aidee-onboarding"
 
 fail() {
@@ -19,6 +20,9 @@ if ! id "${AIDEE_CONTROLLER_USER}" >/dev/null 2>&1; then
 fi
 if [[ ! -f "${fleet_source}/dashboard/manifest.json" ]]; then
   fail "Fleet dashboard plugin is missing: ${fleet_source}"
+fi
+if [[ ! -f "${overview_source}/dashboard/manifest.json" ]]; then
+  fail "Fleet overview plugin is missing: ${overview_source}"
 fi
 if [[ ! -f "${onboarding_source}/plugin.yaml" ]]; then
   fail "Onboarding plugin is missing: ${onboarding_source}"
@@ -64,8 +68,10 @@ enable_user_plugin() {
     --no-allow-tool-override
 }
 
+install_user_plugin "${overview_source}" "aidee-overview"
 install_user_plugin "${fleet_source}" "aidee-fleet"
 install_user_plugin "${onboarding_source}" "aidee-onboarding"
+enable_user_plugin "aidee-overview"
 enable_user_plugin "aidee-fleet"
 enable_user_plugin "aidee-onboarding"
 

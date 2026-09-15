@@ -1,0 +1,14 @@
+{
+  "name": "aidee-assistant-home",
+  "label": "Overview",
+  "description": "This assistant's status, identity, Langfuse, OpenCode, and memory files.",
+  "icon": "House",
+  "version": "0.1.0",
+  "tab": {
+    "path": "/",
+    "override": "/",
+    "position": "start"
+  },
+  "entry": "dist/index.js",
+  "api": "plugin_api.py"
+}

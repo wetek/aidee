@@ -236,6 +236,7 @@ def sync_fleet_assistants(
                     fleet_dir,
                     runtime_dir,
                     uid=CONTAINER_UID,
+                    state_root=state_root,
                 )
                 skills = sync_shared_skills(source_root, runtime_dir, dry_run=False)
                 if skills:

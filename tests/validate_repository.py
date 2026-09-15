@@ -110,6 +110,21 @@ def validate_schemas():
         default_status("assistant", "personal"),
         onboarding_schema,
     )
+    profile_schema = load_json(
+        ROOT / "platform" / "schemas" / "assistant-profile.schema.json"
+    )
+    jsonschema.validate(
+        {
+            "schema_version": 1,
+            "id": "pilot",
+            "name": "Pilot",
+            "kind": "coding",
+            "purpose": "Validate Aidee",
+            "projects": [{"id": "aidee", "repositories": [{"url": "https://example.com/aidee.git"}]}],
+            "capabilities": ["coding", "projects"],
+        },
+        profile_schema,
+    )
 
 
 def validate_yaml():
@@ -318,6 +333,114 @@ def validate_document_paths():
             )
 
 
+def validate_dashboard_homes():
+    overview_manifest = load_json(
+        ROOT
+        / "platform"
+        / "dashboard-plugins"
+        / "aidee-overview"
+        / "dashboard"
+        / "manifest.json"
+    )
+    home_manifest = load_json(
+        ROOT
+        / "platform"
+        / "dashboard-plugins"
+        / "aidee-assistant-home"
+        / "dashboard"
+        / "manifest.json"
+    )
+    for manifest in (overview_manifest, home_manifest):
+        if manifest.get("tab", {}).get("override") != "/":
+            raise AssertionError(
+                f"{manifest.get('name')} must override the dashboard root route"
+            )
+        if manifest.get("tab", {}).get("path") != "/":
+            raise AssertionError(
+                f"{manifest.get('name')} must use the dashboard root path"
+            )
+    for relative in (
+        "platform/dashboard-plugins/shared/dashboard-ui.tsx",
+        "platform/dashboard-plugins/aidee-overview/dashboard/src/index.tsx",
+        "platform/dashboard-plugins/aidee-overview/dashboard/dist/index.js",
+        "platform/dashboard-plugins/aidee-assistant-home/dashboard/src/index.tsx",
+        "platform/dashboard-plugins/aidee-assistant-home/dashboard/dist/index.js",
+        "platform/scripts/build-dashboard-plugins.sh",
+    ):
+        path = ROOT / relative
+        if not path.is_file():
+            raise AssertionError(f"Dashboard home file is missing: {relative}")
+    overview_api = (
+        ROOT
+        / "platform/dashboard-plugins/aidee-overview/dashboard/plugin_api.py"
+    ).read_text()
+    if 'call_admin("fleet_overview")' not in overview_api:
+        raise AssertionError("Fleet overview plugin must load fleet_overview")
+    if "set_controller_langfuse" not in overview_api:
+        raise AssertionError("Fleet overview plugin must write controller Langfuse")
+    if "set_assistant_langfuse" in overview_api:
+        raise AssertionError("Fleet overview plugin must not write assistant Langfuse")
+    if "reveal_dashboard_password" in overview_api:
+        raise AssertionError("Fleet overview plugin must not request secrets")
+    dockerfile = (ROOT / "platform/container/Dockerfile").read_text()
+    if "dashboard-plugins/aidee-assistant-home/" not in dockerfile:
+        raise AssertionError("Assistant image must package the assistant home plugin")
+    install = (ROOT / "platform/scripts/install-dashboard-plugins.sh").read_text()
+    if "aidee-overview" not in install:
+        raise AssertionError("Controller plugin install must include Fleet overview")
+    overview_js = (
+        ROOT
+        / "platform/dashboard-plugins/aidee-overview/dashboard/dist/index.js"
+    ).read_text()
+    home_js = (
+        ROOT
+        / "platform/dashboard-plugins/aidee-assistant-home/dashboard/dist/index.js"
+    ).read_text()
+    if 'register("aidee-overview"' not in overview_js:
+        raise AssertionError("Fleet overview bundle does not register the plugin")
+    if 'register("aidee-assistant-home"' not in home_js:
+        raise AssertionError("Assistant home bundle does not register the plugin")
+    if "Langfuse" not in overview_js or "OpenCode" not in overview_js:
+        raise AssertionError("Fleet overview bundle must show Langfuse and OpenCode")
+    if "Langfuse" not in home_js or "OpenCode" not in home_js:
+        raise AssertionError("Assistant overview bundle must show Langfuse and OpenCode")
+    overview_src = (
+        ROOT / "platform/dashboard-plugins/aidee-overview/dashboard/src/index.tsx"
+    ).read_text()
+    if overview_src.count("<LangfusePanel") != 1:
+        raise AssertionError("Fleet overview must keep controller Langfuse settings only")
+    if overview_src.count("<OpencodePanel") != 1:
+        raise AssertionError("Fleet overview must keep controller OpenCode settings only")
+    if "assistant.id" in overview_src and (
+        "saveLangfuse(formKey" in overview_src or "changeOpencode(formKey" in overview_src
+    ):
+        raise AssertionError("Fleet assistant cards must not write settings")
+    if "Open dashboard" not in overview_js:
+        raise AssertionError("Fleet overview must keep Open dashboard on assistant cards")
+    if "Change keys" not in overview_js or "Save and enable" not in overview_js:
+        raise AssertionError("Fleet overview must keep controller Langfuse writes")
+    if "Change keys" in home_js or "Save and enable" in home_js:
+        raise AssertionError("Assistant overview must not write install Langfuse keys")
+    if "Hermes Keys page" not in overview_js:
+        raise AssertionError("Fleet overview must say Langfuse values live on the Hermes Keys page")
+    if "were set on the controller" not in home_js:
+        raise AssertionError(
+            "Assistant overview must say tracing values were set on the controller"
+        )
+    if home_manifest.get("label") != "Overview":
+        raise AssertionError("Assistant dashboard root tab must be labeled Overview")
+    home_api = (
+        ROOT
+        / "platform/dashboard-plugins/aidee-assistant-home/dashboard/plugin_api.py"
+    ).read_text()
+    if "call_admin" in home_api or "AIDEE_ADMIN_SOCKET" in home_api:
+        raise AssertionError("Assistant home must not call the administration helper")
+    if "HERMES_LANGFUSE_SECRET_KEY" in overview_js or "sk-lf-" in overview_js:
+        raise AssertionError("Fleet overview bundle must not embed Langfuse secrets")
+    if "HERMES_LANGFUSE_SECRET_KEY" in home_js or "sk-lf-" in home_js:
+        raise AssertionError("Assistant home bundle must not embed Langfuse secrets")
+
+
 def validate_no_pipe_to_shell():
     for pattern in ("*.md", "*.sh"):
         for path in ROOT.rglob(pattern):
@@ -343,5 +466,6 @@ if __name__ == "__main__":
     validate_fleet_initialization()
     validate_setup_guidance()
     validate_document_paths()
+    validate_dashboard_homes()
     validate_no_pipe_to_shell()
     print("Repository validation passed.")
