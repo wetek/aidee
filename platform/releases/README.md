@@ -82,6 +82,9 @@ root overrides for reliable Hermes sidebar navigation.
 
 `v0.1.0-alpha.29` installs the Langfuse Python SDK for assistant observability tracing.
 
+`v0.1.0-alpha.30` installs Langfuse into the assistant Hermes virtual environment to bypass PEP 668.
+
+
 
 
 
